@@ -1,0 +1,20 @@
+sudo: required
+
+dist: bionic
+
+language: python
+
+services:
+  - docker
+
+jobs:
+  include:
+    - stage: "Build Docker Image"
+      name: "Build on Ubuntu 18.04"
+      script:
+      - docker build -t rlgear:${TRAVIS_BUILD_NUMBER} .
+
+notifications:
+  email:
+    on_success: change
+    on_failure: always

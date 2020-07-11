@@ -1,0 +1,37 @@
+log:
+    prefixes:
+        - ~/
+    exp_group: 'ray_results'
+
+git_repos:
+    - .
+
+rllib:
+    tune_kwargs_blocks: 'common_params'
+
+    common_params:
+        run_or_experiment: 'PPO'
+        checkpoint_freq: 1
+        keep_checkpoints_num: 5
+        checkpoint_at_end: true
+        resume: false
+        max_failures: 10
+        restore: 
+        stop:
+            timesteps_total: 30000
+        config:
+            env: 'CartPole-v0'
+
+            # copied from:
+            # https://github.com/ray-project/ray/blob/master/rllib/tuned_examples/ppo/cartpole-ppo.yaml
+            use_pytorch: true
+            gamma: 0.99
+            lr: 0.0003
+            num_workers: 1
+            observation_filter: MeanStdFilter
+            num_sgd_iter: 6
+            vf_share_layers: true
+            vf_loss_coeff: 0.01
+            model:
+              fcnet_hiddens: [32]
+              fcnet_activation: linear

@@ -15,7 +15,7 @@ from ray.rllib.evaluation import MultiAgentEpisode
 from ray.rllib.agents.callbacks import DefaultCallbacks
 
 from .utils import MetaWriter, get_inputs, parse_inputs, get_log_dir, \
-    StrOrPath
+    StrOrPath, dict_str2num
 
 
 def make_rllib_metadata_logger(meta_data_writer: MetaWriter) \
@@ -96,7 +96,7 @@ def make_basic_rllib_config(
     gpu_avail = int(np.clip(int(resources.get('GPU', 0)), 0, 1))
 
     inputs = get_inputs(yaml_file, search_dirs)
-    params = parse_inputs(inputs)
+    params = dict_str2num(parse_inputs(inputs))
 
     # override the non-rllib blocks
     if overrides is not None:

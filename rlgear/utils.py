@@ -179,6 +179,21 @@ def parse_inputs(inputs: Iterable[StrOrPath]) -> dict:
     return out
 
 
+def dict_str2num(d: dict) -> dict:
+
+    keys = list(d.keys())  # copy
+    for k in keys:
+        v = d[k]
+        try:
+            fv = float(v)
+            d[k] = int(fv) if fv.is_integer() else float(v)
+        except (ValueError, TypeError):
+            if isinstance(v, dict):
+                d[k] = dict_str2num(v)
+
+    return d
+
+
 def get_latest_checkpoint(ckpt_root_dir: str) -> str:
     ckpts = [str(c) for c in Path(ckpt_root_dir).rglob('*checkpoint-*')
              if 'meta' not in str(c)]

@@ -50,15 +50,24 @@ class MetaWriter():
 
         self.git_info = {}
         for repo_root in roots:
-            repo = git.Repo(repo_root,
-                            search_parent_directories=True)
-            diff = sp.check_output(
-                ['git', 'diff'], cwd=repo.working_dir).decode(encoding='UTF-8')
+            try:
+                repo = git.Repo(repo_root,
+                                search_parent_directories=True)
+            # pylint: disable=no-member
+            except (git.exc.InvalidGitRepositoryError,
+                    git.exc.NoSuchPathError) as e:
+                print(e)
+                print((f'ignoring the previous git error for {repo_root}.'
+                       'This git repo will not be saved.'))
+            else:
+                diff = sp.check_output(
+                    ['git', 'diff'],
+                    cwd=repo.working_dir).decode(encoding='UTF-8')
 
-            self.git_info[Path(repo.working_dir).stem] = {
-                'repo_dir': repo.working_dir,
-                'commit': repo.commit().name_rev,
-                'diff': diff}
+                self.git_info[Path(repo.working_dir).stem] = {
+                    'repo_dir': repo.working_dir,
+                    'commit': repo.commit().name_rev,
+                    'diff': diff}
 
     def write(self, logdir: str) -> None:
         if self.print_log_dir:

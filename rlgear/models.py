@@ -10,7 +10,7 @@ import torch.nn as nn
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from ray.rllib.models.modelv2 import ModelV2
 from ray.rllib.utils.annotations import override
-from ray.rllib.models.torch.misc import valid_padding
+from ray.rllib.models.torch.misc import same_padding
 from ray.rllib.policy.rnn_sequencing import add_time_dimension
 
 
@@ -291,11 +291,11 @@ class TorchImpalaModel(TorchForwardModel):
         conv2d = functools.partial(
             nn.Conv2d, kernel_size=kernel_conv, stride=stride_conv)
         conv_padding = functools.partial(
-            valid_padding, filter_size=[kernel_conv, kernel_conv],
+            same_padding, filter_size=[kernel_conv, kernel_conv],
             stride_size=[stride_conv, stride_conv])
 
         maxpool_padding = functools.partial(
-            valid_padding, filter_size=[pool_kernel, pool_kernel],
+            same_padding, filter_size=[pool_kernel, pool_kernel],
             stride_size=[pool_stride, pool_stride])
 
         for in_c, out_c in zip(channels[:-1], channels[1:]):

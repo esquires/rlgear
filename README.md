@@ -7,7 +7,7 @@ This project makes setting up new research projects with
 
 ## Installation
 
-`rlgear` is designed to work with ray version 0.8.5 or later
+`rlgear` is designed to work with ray version 0.8.7 or later
 and has been tested with python 3.6.
 
 First install `tensorflow` and `pytorch`. cpu-only `tensorflow` is

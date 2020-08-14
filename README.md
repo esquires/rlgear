@@ -53,6 +53,27 @@ requirements.txt, etc). See `utils.py` and `rllib_utils.py`)
 After running an experiment multiple times, plot it in matplotlib
 with transparent percentiles. See `scripts.py` and `utils.py`
 
+## Troubleshooting
+
+When restoring a pytorch model with `ray>=0.8.6` there is an error that can arise when workers using only a cpu:
+
+```
+  RuntimeError: Attempting to deserialize object on a CUDA device but
+  torch.cuda.is_available() is False. If you are running on a CPU-only machine,
+  please use torch.load with map_location=torch.device('cpu') to map your
+  storages to the CPU.
+```
+
+A short-term fix suggested [here](https://github.com/ray-project/ray/issues/9181#issuecomment-650731631)
+is to change the pytorch code in `torch/storage.py` as follows:
+
+```[python]
+    def _load_from_bytes(b):
+        if torch.cuda.is_available():
+            return torch.load(io.BytesIO(b))
+        else:
+            return torch.load(io.BytesIO(b), map_location=torch.device('cpu'))
+```
 
 ## License
 

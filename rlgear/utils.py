@@ -1,11 +1,7 @@
 import sys
-import collections
 import shutil
 import re
-import pickle
 import subprocess as sp
-import warnings
-import difflib
 from pathlib import Path
 from typing import Iterable, List, Union, Dict, Tuple, Optional, Sequence
 
@@ -17,9 +13,6 @@ import matplotlib.ticker as mtick
 
 import yaml
 import git
-
-# pylint: disable=no-name-in-module
-from tensorflow.python.summary.summary_iterator import summary_iterator
 
 StrOrPath = Union[str, Path]
 
@@ -53,17 +46,18 @@ class MetaWriter():
             try:
                 repo = git.Repo(repo_root,
                                 search_parent_directories=True)
-            # pylint: disable=no-member
-            except (git.exc.InvalidGitRepositoryError,
-                    git.exc.NoSuchPathError) as e:
-                print(e)
-                print((f'ignoring the previous git error for {repo_root}.'
-                       'This git repo will not be saved.'))
-            else:
                 diff = sp.check_output(
                     ['git', 'diff'],
                     cwd=repo.working_dir).decode(encoding='UTF-8')
 
+            # pylint: disable=no-member
+            except (git.exc.InvalidGitRepositoryError,
+                    git.exc.NoSuchPathError,
+                    sp.CalledProcessError) as e:
+                print(e)
+                print((f'ignoring the previous git error for {repo_root}.'
+                       'This git repo will not be saved.'))
+            else:
                 self.git_info[Path(repo.working_dir).stem] = {
                     'repo_dir': repo.working_dir,
                     'commit': repo.commit().name_rev,
@@ -220,37 +214,7 @@ def get_log_dir(log_params: Dict[str, str],
     return prefix / log_params['exp_group'] / Path(yaml_fname).stem / exp_name
 
 
-def tensorboard_data(
-        fname: Union[str, Path], tag: str, max_step: Optional[int] = None) \
-        -> Tuple[List[int], List[float]]:
-    values = []
-    step_nums = []
-    # print('reading ', fname)
-    tags = set()
-
-    for e in summary_iterator(str(fname)):
-
-        if max_step and e.step > max_step:
-            break
-
-        for v in e.summary.value:
-            tags.add(v.tag)
-            # print(v.tag)
-            if v.tag == tag:
-                step_nums.append(e.step)
-                values.append(v.simple_value)
-
-    if not values:
-        suggestions = difflib.get_close_matches(tag, tags, n=3)
-        if not suggestions:
-            suggestions = tags  # type: ignore
-        warnings.warn("no data found in {}, you may have meant {}".format(
-            fname, suggestions))
-
-    return step_nums, values
-
-
-def _merge_dfs(_dfs: Sequence[pd.DataFrame]) -> pd.DataFrame:
+def merge_dfs(_dfs: Sequence[pd.DataFrame]) -> pd.DataFrame:
     _df = _dfs[0]
     if len(_dfs) > 1:
         for i, __df in enumerate(_dfs[1:]):
@@ -264,43 +228,6 @@ def shorten_dfs(_dfs: Sequence[pd.DataFrame]) -> None:
     shortest_max_step = min([_df.index.max() for _df in _dfs])
     for i, _df in enumerate(_dfs):
         _dfs[i] = _df[_df.index <= shortest_max_step]  # type: ignore
-
-
-def find_tb_fnames(base_dir: str) -> List[List[Path]]:
-    tb_fnames = Path(base_dir).rglob('events.out.tfevents*')
-    tb_grouped_fnames: dict = collections.defaultdict(list)
-    for f in tb_fnames:
-        tb_grouped_fnames[f.parent].append(f)
-
-    return list(tb_grouped_fnames.values())
-
-
-def tb_to_df(
-        tb_fnames: Iterable[Iterable[Path]],
-        tag: str,
-        max_step: Optional[int],
-        only_complete_data: bool) -> pd.DataFrame:
-
-    all_dfs = []
-    for tb_group in tb_fnames:
-        if isinstance(tb_group, (Path, str)):
-            tb_group = [tb_group]
-
-        # get the data
-        data = [tensorboard_data(f, tag, max_step) for f in tb_group]
-        dfs = [pd.DataFrame({'values': v, 'steps': s}).set_index('steps')
-               for s, v in data]
-        df = _merge_dfs(dfs)
-        if len(df.columns) > 1:
-            cols = df.columns
-            df['values'] = df.mean(axis=1)
-            df = df.drop(cols, axis=1)
-        all_dfs.append(df)
-
-    if only_complete_data:
-        shorten_dfs(all_dfs)
-
-    return _merge_dfs(all_dfs)
 
 
 def plot_percentiles(
@@ -318,53 +245,32 @@ def plot_percentiles(
     ax.fill_between(df.index, pct_low, pct_high, alpha=alpha)
 
 
-def filter_tensorboard_values(values: Sequence[float], smoothing: float) \
-        -> List[float]:
-    # https://stackoverflow.com/a/49357445
-    smoothed = []
-    smoothed.append(values[0])
-    for v in values[1:]:
-        smoothed.append(smoothed[-1] * smoothing + v * (1 - smoothing))
-
-    return smoothed
-
-
-def plot_smoothed(
+# pylint: disable=too-many-locals
+def plot_progress(
         ax: plt.axis,
-        timesteps: Iterable[int],
-        values: Sequence[float], smoothed_values: float,
-        label: str,
-        alpha: float = 0.2) \
-        -> None:
-    line = ax.plot(timesteps, smoothed_values, label=label)[0]
-    clr = line.get_color()
-    ax.plot(timesteps, values, color=clr, alpha=alpha)
-
-
-def plot_tensorboard(
-        ax: plt.axis,
+        base_dirs: Iterable[StrOrPath],
         tag: str,
-        tb_data: Iterable[Iterable[Iterable[Path]]],
-        names: Iterable[str],
-        percentiles: Optional[Tuple[float, float]] = (0.25, 0.75),
-        alpha: float = 0.1,
-        use_data_cache: bool = False,
-        data_cache_fname: str = ".rlgear_data.p",
+        names: Optional[Iterable[str]] = None,
+        only_complete_data: bool = False,
         show_same_num_timesteps: bool = False,
-        max_step: Optional[int] = None) -> None:
+        percentiles: Optional[Tuple[float, float]] = None,
+        alpha: float = 0.1,
+        xtick_interval: Optional[float] = None) -> None:
 
-    if use_data_cache:
-        with open(data_cache_fname, 'rb') as f:
-            out_dfs = pickle.load(f)
-    else:
-        out_dfs = []
-        for grouped_files in tb_data:
-            out_dfs.append(tb_to_df(
-                grouped_files,
-                tag, max_step=max_step, only_complete_data=True))
+    if not names:
+        names = [Path(d).name for d in base_dirs]
 
-        with open(data_cache_fname, 'wb') as f:
-            pickle.dump(out_dfs, f)
+    out_dfs = []
+    index = 'timesteps_total'
+    for d in base_dirs:
+        progress_files = list(Path(d).rglob('progress.csv'))
+        dfs = [pd.read_csv(f)[[index, tag]].set_index(index)
+               for f in progress_files]
+
+        if only_complete_data:
+            shorten_dfs(dfs)
+
+        out_dfs.append(merge_dfs(dfs))
 
     if show_same_num_timesteps:
         shorten_dfs(out_dfs)
@@ -375,7 +281,5 @@ def plot_tensorboard(
         if percentiles:
             plot_percentiles(ax, df, percentiles, alpha)
 
-    # https://stackoverflow.com/a/25750438
-    ax.xaxis.set_major_formatter(mtick.FormatStrFormatter('%.1e'))
-    ax.set_xlabel('Training Step')
-    plt.tight_layout()
+    if xtick_interval:
+        ax.xaxis.set_major_locator(mtick.MultipleLocator(xtick_interval))

@@ -26,6 +26,6 @@ setup(
     ],
     entry_points={
         'console_scripts':
-            ['tensorboard-mean-plot=rlgear.scripts:tensorboard_mean_plot'],
+            ['plot-progress=rlgear.scripts:plot_progress_script'],
     }
 )

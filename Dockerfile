@@ -9,9 +9,11 @@ RUN apt-get update && \
     apt-get install -y python3-pip python3-pytest git python3-opencv && \
     rm -rf /var/lib/apt/lists/*
 
-# install tensorflow and pytorch independently so
-# as not to mess with neural network libraries
-RUN pip3 install tensorflow torch torchvision mypy flake8 pylint pydocstyle
+# install pytorch independently so
+# as not to mess with neural network libraries.
+# install the latest numpy because of this (https://stackoverflow.com/a/18204349).
+# also install grpcio here so local builds don't take as long
+RUN pip3 install -U torch torchvision mypy flake8 pylint pydocstyle numpy grpcio
 
 COPY ./ /root/rlgear
 WORKDIR /root/rlgear

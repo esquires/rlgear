@@ -4,10 +4,7 @@ import os
 from pathlib import Path
 import sys
 import json
-import warnings
 from typing import Tuple, Any, Iterable, Union, Dict, List
-
-import numpy as np
 
 import ray
 import ray.tune.utils
@@ -91,10 +88,6 @@ def make_basic_rllib_config(
         overrides: dict = None) \
         -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
-    resources = ray.cluster_resources()
-    max_num_workers = int(resources['CPU']) - 1
-    gpu_avail = int(np.clip(int(resources.get('GPU', 0)), 0, 1))
-
     inputs = get_inputs(yaml_file, search_dirs)
     params = dict_str2num(parse_inputs(inputs))
 
@@ -119,8 +112,6 @@ def make_basic_rllib_config(
     kwargs: dict = {
         'config': {
             "log_level": "INFO",
-            "num_workers": max_num_workers,
-            "num_gpus": gpu_avail,
         },
         'local_dir': str(log_dir),
         'loggers': loggers
@@ -133,11 +124,6 @@ def make_basic_rllib_config(
     if overrides is not None:
         params = ray.tune.utils.merge_dicts(params, overrides)
         kwargs = ray.tune.utils.merge_dicts(kwargs, overrides.get('rllib', {}))
-
-    if kwargs['config']['num_workers'] > max_num_workers:  # type: ignore
-        warnings.warn(
-            f"num workers set too high, setting to {max_num_workers}")
-        kwargs['config']['num_workers'] = max_num_workers
 
     kwargs['config']['callbacks'] = InfoToCustomMetricsCallback
 

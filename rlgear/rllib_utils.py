@@ -120,11 +120,6 @@ def make_basic_rllib_config(
     for blk in params['rllib']['tune_kwargs_blocks'].split(','):
         kwargs = ray.tune.utils.merge_dicts(kwargs, params['rllib'][blk])
 
-    # override the rllib blocks
-    if overrides is not None:
-        params = ray.tune.utils.merge_dicts(params, overrides)
-        kwargs = ray.tune.utils.merge_dicts(kwargs, overrides.get('rllib', {}))
-
     kwargs['config']['callbacks'] = InfoToCustomMetricsCallback
 
     return params, kwargs

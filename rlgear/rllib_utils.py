@@ -1,9 +1,11 @@
 import argparse
 import re
 import os
-from pathlib import Path
 import sys
+import string
 import json
+import random
+from pathlib import Path
 from typing import Tuple, Any, Iterable, Union, Dict, List
 
 import ray
@@ -134,3 +136,26 @@ class InfoToCustomMetricsCallback(DefaultCallbacks):
         key = list(episode._agent_to_last_info.keys())[0]
         ep_info = episode.last_info_for(key).copy()
         episode.custom_metrics.update(ray.tune.utils.flatten_dict(ep_info))
+
+
+def gen_passwd(size: int) -> str:
+    """Generate password for ray.init call.
+
+    See
+    https://docs.ray.io/en/latest/configure.html?highlight=security#redis-port-authentication
+
+    This function was adapted from https://stackoverflow.com/a/2257449
+
+    Example
+    -------
+    ray.init(redis_password=gen_passwd(512))
+
+    Parameters
+    ----------
+    size : int
+        how long the password should be
+
+    """
+    # https://stackoverflow.com/a/2257449
+    chars = string.ascii_letters + string.digits
+    return ''.join(random.SystemRandom().choice(chars) for _ in range(size))

@@ -102,7 +102,8 @@ def make_basic_rllib_config(
     loggers = list(ray.tune.logger.DEFAULT_LOGGERS)
 
     meta_data_writer = MetaWriter(
-        repo_roots=[Path.cwd()] + params['git_repos'], files=inputs)
+        repo_roots=[Path.cwd()] + params['git_repos']['paths'], files=inputs,
+        check_clean=params['git_repos']['check_clean'])
     loggers.append(make_rllib_metadata_logger(meta_data_writer))
 
     if 'tb_filters' in params['log']:

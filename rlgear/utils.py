@@ -23,7 +23,8 @@ class MetaWriter():
             repo_roots: Union[Iterable[StrOrPath], StrOrPath],
             files: Union[Iterable[StrOrPath], StrOrPath],
             print_log_dir: bool = True,
-            symlink_dir: str = "."):
+            symlink_dir: str = ".",
+            check_clean: Union[Iterable[bool], bool] = False):
 
         def _to_list_of_paths(var: Union[Iterable[StrOrPath], StrOrPath]) \
                 -> List[Path]:
@@ -31,6 +32,9 @@ class MetaWriter():
             return [Path(v) for v in var_list]  # type: ignore
 
         roots = _to_list_of_paths(repo_roots)
+        if not isinstance(check_clean, list):
+            check_clean = [bool(check_clean) for _ in range(len(roots))]
+
         self.files = _to_list_of_paths(files)
         self.symlink_dir = Path(symlink_dir).expanduser()
 
@@ -42,7 +46,7 @@ class MetaWriter():
         self.cmd = " ".join(sys.argv)
 
         self.git_info = {}
-        for repo_root in roots:
+        for repo_root, check in zip(roots, check_clean):
             try:
                 repo = git.Repo(repo_root,
                                 search_parent_directories=True)
@@ -58,6 +62,10 @@ class MetaWriter():
                 print((f'ignoring the previous git error for {repo_root}.'
                        'This git repo will not be saved.'))
             else:
+                if check:
+                    assert not repo.head.commit.diff(None), \
+                        (f"check_clean is set to True for {repo.common_dir} "
+                         "but the status is not clean")
                 self.git_info[Path(repo.working_dir).stem] = {
                     'repo_dir': repo.working_dir,
                     'commit': repo.commit().name_rev,

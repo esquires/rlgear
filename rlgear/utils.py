@@ -232,10 +232,12 @@ def merge_dfs(_dfs: Sequence[pd.DataFrame]) -> pd.DataFrame:
     return _df
 
 
-def shorten_dfs(_dfs: Sequence[pd.DataFrame]) -> None:
-    shortest_max_step = min([_df.index.max() for _df in _dfs])
+def shorten_dfs(_dfs: Sequence[pd.DataFrame], max_step: int = None) -> None:
+    if max_step is None:
+        # shortest maximum step among the dfs
+        max_step = min([_df.index.max() for _df in _dfs])
     for i, _df in enumerate(_dfs):
-        _dfs[i] = _df[_df.index <= shortest_max_step]  # type: ignore
+        _dfs[i] = _df[_df.index <= max_step]  # type: ignore
 
 
 def plot_percentiles(
@@ -263,7 +265,8 @@ def plot_progress(
         show_same_num_timesteps: bool = False,
         percentiles: Optional[Tuple[float, float]] = None,
         alpha: float = 0.1,
-        xtick_interval: Optional[float] = None) -> None:
+        xtick_interval: Optional[float] = None,
+        max_step: int = None) -> None:
 
     if not names:
         names = [Path(d).name for d in base_dirs]
@@ -272,8 +275,14 @@ def plot_progress(
     index = 'timesteps_total'
     for d in base_dirs:
         progress_files = list(Path(d).rglob('progress.csv'))
-        dfs = [pd.read_csv(f)[[index, tag]].set_index(index)
-               for f in progress_files]
+        dfs = [pd.read_csv(f) for f in progress_files]
+
+        for i, df in enumerate(dfs):
+            try:
+                dfs[i] = df[[index, tag]].set_index(index)
+            except KeyError as e:
+                print(f'available keys are {df.columns}')
+                raise e
 
         if only_complete_data:
             shorten_dfs(dfs)
@@ -282,6 +291,9 @@ def plot_progress(
 
     if show_same_num_timesteps:
         shorten_dfs(out_dfs)
+
+    if max_step is not None:
+        shorten_dfs(out_dfs, max_step)
 
     for name, df in zip(names, out_dfs):
         ax.plot(df.index, df.mean(axis=1), label=name)

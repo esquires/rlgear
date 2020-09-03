@@ -38,8 +38,12 @@ class MetaWriter():
         self.files = _to_list_of_paths(files)
         self.symlink_dir = Path(symlink_dir).expanduser()
 
-        self.requirements = sp.check_output(
-            ['pip3', 'freeze']).decode(encoding='UTF-8')
+        try:
+            self.requirements = sp.check_output(
+                ['pip3', 'freeze']).decode(encoding='UTF-8')
+        except FileNotFoundError:
+            self.requirements = sp.check_output(
+                ['pip', 'freeze']).decode(encoding='UTF-8')
 
         self.print_log_dir = print_log_dir
 

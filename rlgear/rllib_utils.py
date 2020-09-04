@@ -5,6 +5,7 @@ import sys
 import string
 import json
 import random
+import time
 from pathlib import Path
 from typing import Tuple, Any, Iterable, Union, Dict, List
 
@@ -63,10 +64,25 @@ def make_rllib_metadata_logger(meta_data_writer: MetaWriter) \
     return RllibLogMetaData
 
 
-def make_filtered_tblogger(regex_filters: List[str]) \
-        -> ray.tune.logger.Logger:
+def make_filtered_tblogger(
+        regex_filters: List[str],
+        time_elapsed: float = 0,
+        train_iters: int = 0) -> ray.tune.logger.Logger:
     class FilteredTbLogger(ray.tune.logger.TBXLogger):
+        def _init(self) -> None:
+            super()._init()
+            self.last_time = time.perf_counter() - 1 - time_elapsed
+            self.last_train_iter = -1 - train_iters
+
         def on_result(self, result: dict) -> None:
+            t = time.perf_counter()
+            training_iter = result['training_iteration']
+            if (t - self.last_time < time_elapsed or
+                    training_iter - self.last_train_iter < train_iters):
+                return
+
+            self.last_time = t
+            self.last_train_iter = training_iter
             result['custom_metrics'] = \
                 {k: v for k, v in result['custom_metrics'].items()
                  if not any([re.search(r, k) for r in regex_filters])}
@@ -106,10 +122,10 @@ def make_basic_rllib_config(
         check_clean=params['git_repos']['check_clean'])
     loggers.append(make_rllib_metadata_logger(meta_data_writer))
 
-    if 'tb_filters' in params['log']:
+    if 'tb_filter' in params['log']:
         loggers = \
             [l for l in loggers if l is not ray.tune.logger.TBXLogger]  # NOQA
-        loggers.append(make_filtered_tblogger(params['log']['tb_filters']))
+        loggers.append(make_filtered_tblogger(**params['log']['tb_filter']))
 
     # provide defaults that can be overriden in the yaml file
     kwargs: dict = {

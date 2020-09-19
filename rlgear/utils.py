@@ -160,7 +160,7 @@ def find_filepath(
             else:
                 return paths[0]
         except StopIteration as e:
-            print(f'could not find {fname}')
+            print(f'could not find {fname} in {search_dirs}')
             raise e
 
 
@@ -197,6 +197,10 @@ def parse_inputs(inputs: Iterable[StrOrPath]) -> dict:
 
         out = merge_dicts(out, params)
 
+    try:
+        del out['__inputs__']
+    except KeyError:
+        pass
     return out
 
 

@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Tuple, Any, Iterable, Union, Dict, List
 
+import yaml
 import ray
 import ray.tune.utils
 from ray.rllib.evaluation import MultiAgentEpisode
@@ -103,8 +104,7 @@ def make_basic_rllib_config(
         yaml_file: StrOrPath,
         exp_name: str,
         search_dirs: Union[StrOrPath, Iterable[StrOrPath]],
-        overrides: dict = None,
-        add_meta_writer: bool = True) \
+        overrides: dict = None) \
         -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     inputs = get_inputs(yaml_file, search_dirs)
@@ -118,11 +118,12 @@ def make_basic_rllib_config(
 
     loggers = list(ray.tune.logger.DEFAULT_LOGGERS)
 
-    if add_meta_writer:
-        meta_data_writer = MetaWriter(
-            repo_roots=[Path.cwd()] + params['git_repos']['paths'],
-            files=inputs, check_clean=params['git_repos']['check_clean'])
-        loggers.append(make_rllib_metadata_logger(meta_data_writer))
+    meta_data_writer = MetaWriter(
+        repo_roots=[Path.cwd()] + params['git_repos']['paths'],
+        files=inputs,
+        str_data={'merged_params.yaml': yaml.dump(params)},
+        check_clean=params['git_repos']['check_clean'])
+    loggers.append(make_rllib_metadata_logger(meta_data_writer))
 
     if 'tb_filter' in params['log']:
         loggers = \

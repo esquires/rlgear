@@ -1,8 +1,9 @@
 import queue
+import re
 import os
 import fnmatch
 from pathlib import Path
-from typing import Iterable, Tuple, Any
+from typing import Iterable, Any
 
 import numpy as np
 import gym
@@ -31,8 +32,9 @@ def make_dummy_env(ob_space: gym.Space, ac_space: gym.Space) \
 
 
 class CheckpointMonitor(FileSystemEventHandler):
-    def __init__(self, created_queue: queue.Queue):
+    def __init__(self, created_queue: queue.Queue, deleted_queue: queue.Queue):
         self.created_queue = created_queue
+        self.deleted_queue = deleted_queue
         super().__init__()
 
     def on_created(self, event: FileSystemEvent) -> None:
@@ -45,6 +47,17 @@ class CheckpointMonitor(FileSystemEventHandler):
         else:
             print((f"checkpoint {ckpt} created after metadata. "
                    "This is not typical..."))
+
+    def on_deleted(self, event: FileSystemEvent) -> None:
+        if event.is_directory:
+            return
+
+        ckpt = Path(event.src_path)
+        m = re.match(r'checkpoint-\d+$', ckpt.name)
+        if m is None:
+            return
+
+        self.deleted_queue.put(ckpt)
 
 
 def make_agent(yaml_file: Path, search_dirs: Iterable[StrOrPath], env: Any) \
@@ -89,7 +102,9 @@ def ckpt_to_yaml(ckpt: Path) -> Path:
 class SelfPlay:
     def __init__(self, prev_paths: Iterable[str], watch_path: str):
         self.created_queue: queue.Queue = queue.Queue()
-        event_handler = CheckpointMonitor(self.created_queue)
+        self.deleted_queue: queue.Queue = queue.Queue()
+        event_handler = CheckpointMonitor(
+            self.created_queue, self.deleted_queue)
         self.observers = []
 
         self.observers.append(Observer())
@@ -120,6 +135,13 @@ class SelfPlay:
                 break
             self.ckpts.add(ckpt)
 
-    def get_ckpt(self) -> Tuple[Path, Path]:
+        while True:
+            try:
+                ckpt = self.deleted_queue.get(timeout=0.01)
+            except queue.Empty:
+                break
+            self.ckpts.remove(ckpt)
+
+    def get_ckpt(self) -> Path:
         idx = np.random.randint(len(self.ckpts))
         return self.ckpts[idx]

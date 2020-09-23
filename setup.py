@@ -14,8 +14,6 @@ setup(
         "pandas",
         "matplotlib",
         "gym",
-        "watchdog",
-        "boltons",
         # ray packages
         "ray[debug]>=0.8.7",
         "ray[tune]>=0.8.7",

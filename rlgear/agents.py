@@ -1,19 +1,13 @@
-import queue
-import re
 import os
 import fnmatch
 from pathlib import Path
-from typing import Iterable, Any
+from typing import Iterable, Any, Set
 
 import numpy as np
 import gym
-import boltons.setutils
 
 import ray.tune
 from ray.rllib.agents.trainer import Trainer
-
-from watchdog.events import FileSystemEventHandler, FileSystemEvent
-from watchdog.observers import Observer
 
 from .utils import get_inputs, dict_str2num, parse_inputs, StrOrPath
 
@@ -29,35 +23,6 @@ def make_dummy_env(ob_space: gym.Space, ac_space: gym.Space) \
             pass
 
     return DummyEnv
-
-
-class CheckpointMonitor(FileSystemEventHandler):
-    def __init__(self, created_queue: queue.Queue, deleted_queue: queue.Queue):
-        self.created_queue = created_queue
-        self.deleted_queue = deleted_queue
-        super().__init__()
-
-    def on_created(self, event: FileSystemEvent) -> None:
-        if not event.src_path.endswith('tune_metadata'):
-            return
-
-        ckpt = Path(event.src_path).with_suffix('')
-        if ckpt.exists():
-            self.created_queue.put(ckpt.resolve())
-        else:
-            print((f"checkpoint {ckpt} created after metadata. "
-                   "This is not typical..."))
-
-    def on_deleted(self, event: FileSystemEvent) -> None:
-        if event.is_directory:
-            return
-
-        ckpt = Path(event.src_path)
-        m = re.match(r'checkpoint-\d+$', ckpt.name)
-        if m is None:
-            return
-
-        self.deleted_queue.put(ckpt)
 
 
 def make_agent(yaml_file: Path, search_dirs: Iterable[StrOrPath], env: Any) \
@@ -101,47 +66,50 @@ def ckpt_to_yaml(ckpt: Path) -> Path:
 
 class SelfPlay:
     def __init__(self, prev_paths: Iterable[str], watch_path: str):
-        self.created_queue: queue.Queue = queue.Queue()
-        self.deleted_queue: queue.Queue = queue.Queue()
-        event_handler = CheckpointMonitor(
-            self.created_queue, self.deleted_queue)
-        self.observers = []
-
-        self.observers.append(Observer())
-        self.observers[-1].schedule(event_handler, watch_path, recursive=True)
-        self.observers[-1].start()
-
+        self.watch_path = watch_path
         # Path.rglob gave errors when there is are temporary files created
         # during the glob
         print(('SelfPlay: building initial checkpoints set. '
                'This may take a while...'))
-        self.ckpts = boltons.setutils.IndexedSet()
+        prior_ckpts_set: Set[Path] = set()
         for p in prev_paths:
-            for root, _, filenames in os.walk(p):
-                for filename in fnmatch.filter(filenames, '*.tune_metadata'):
-                    ckpt = (Path(root) / filename).with_suffix('')
-                    if ckpt.exists():
-                        self.ckpts.add(ckpt)
-                    else:
-                        print((f"checkpoint {ckpt} created after metadata. "
-                               "This is not typical..."))
+            self._build_ckpts(p, prior_ckpts_set)
+        self.prior_ckpts = list(prior_ckpts_set)
         print('done building initial checkpoints set')
 
-    def refresh_data(self) -> None:
-        while True:
-            try:
-                ckpt = self.created_queue.get(timeout=0.01)
-            except queue.Empty:
-                break
-            self.ckpts.add(ckpt)
-
-        while True:
-            try:
-                ckpt = self.deleted_queue.get(timeout=0.01)
-            except queue.Empty:
-                break
-            self.ckpts.remove(ckpt)
+    # pylint: disable=no-self-use
+    def _build_ckpts(self, path: str, ckpts: Set[Path]) \
+            -> None:
+        # Path.rglob gave errors when there is are temporary files created
+        # during the glob
+        for root, _, filenames in os.walk(path):
+            for filename in fnmatch.filter(filenames, '*.tune_metadata'):
+                ckpt = (Path(root) / filename).with_suffix('')
+                if ckpt.exists():
+                    ckpts.add(ckpt)
+                else:
+                    print((f"checkpoint {ckpt} created after metadata. "
+                           "This is not typical..."))
 
     def get_ckpt(self) -> Path:
-        idx = np.random.randint(len(self.ckpts))
-        return self.ckpts[idx]
+        watched_ckpts_set: Set[Path] = set()
+        self._build_ckpts(self.watch_path, watched_ckpts_set)
+        watched_ckpts = list(watched_ckpts_set)
+
+        while True:
+            if len(self.prior_ckpts) + len(watched_ckpts) == 0:
+                raise ValueError('no checkpoints available')
+
+            idx = int(np.random.randint(
+                len(self.prior_ckpts) + len(watched_ckpts)))
+            if idx < len(self.prior_ckpts):
+                ckpt = self.prior_ckpts[idx]
+                if not ckpt.exists():
+                    self.prior_ckpts.remove(ckpt)
+                    continue
+            else:
+                ckpt = watched_ckpts[idx]
+
+            break
+
+        return ckpt

@@ -108,7 +108,7 @@ class SelfPlay:
                     self.prior_ckpts.remove(ckpt)
                     continue
             else:
-                ckpt = watched_ckpts[idx]
+                ckpt = watched_ckpts[idx - len(self.prior_ckpts)]
 
             break
 

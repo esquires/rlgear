@@ -183,7 +183,7 @@ def make_callbacks(callback_classes: Iterable[DefaultCallbacks]) \
 
         def on_episode_end(self, *args, **kwargs):  # type: ignore
             for cb in self.callbacks:
-                cb.on_episode_step(*args, **kwargs)
+                cb.on_episode_end(*args, **kwargs)
 
         def on_postprocess_trajectory(self, *args, **kwargs):  # type: ignore
             for cb in self.callbacks:

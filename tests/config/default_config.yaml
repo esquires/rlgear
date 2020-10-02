@@ -26,7 +26,7 @@ rllib:
 
             # copied from:
             # https://github.com/ray-project/ray/blob/master/rllib/tuned_examples/ppo/cartpole-ppo.yaml
-            use_pytorch: true
+            framework: torch
             gamma: 0.99
             lr: 0.0003
             num_workers: 1

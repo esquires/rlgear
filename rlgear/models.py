@@ -203,6 +203,8 @@ class TorchDQNLSTMModel(TorchForwardModel):
 
         # add time
         x_flat = x.view(x.shape[0], -1)
+
+        # pylint: disable=too-many-function-args,missing-kwoa
         x = add_time_dimension(x_flat, seq_lens, "torch")
 
         # apply lstm

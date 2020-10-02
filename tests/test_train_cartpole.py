@@ -12,7 +12,7 @@ def test_cartpole() -> None:
         'test_cartpole.yaml', 'test_cartpole', config_dir)[-1]
 
     exp = ray.tune.run(**tune_kwargs)
-    trial = exp.get_best_trial('episode_reward_mean')
+    trial = exp.get_best_trial('episode_reward_mean', mode='max')
     last_rew = trial.metric_analysis['episode_reward_mean']['last']
 
     assert last_rew > 50

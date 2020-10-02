@@ -277,6 +277,7 @@ def plot_progress(
         ax: plt.axis,
         base_dirs: Iterable[StrOrPath],
         tag: str,
+        x_tag: str = 'timesteps_total',
         names: Optional[Iterable[str]] = None,
         only_complete_data: bool = False,
         show_same_num_timesteps: bool = False,
@@ -289,14 +290,13 @@ def plot_progress(
         names = [Path(d).name for d in base_dirs]
 
     out_dfs = []
-    index = 'timesteps_total'
     for d in base_dirs:
         progress_files = list(Path(d).rglob('progress.csv'))
         dfs = [pd.read_csv(f) for f in progress_files]
 
         for i, df in enumerate(dfs):
             try:
-                dfs[i] = df[[index, tag]].set_index(index)
+                dfs[i] = df[[x_tag, tag]].set_index(x_tag)
             except KeyError as e:
                 print(f'available keys are {df.columns}')
                 raise e

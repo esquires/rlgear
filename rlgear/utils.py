@@ -1,9 +1,11 @@
 import sys
+import importlib
 import shutil
 import re
 import subprocess as sp
 from pathlib import Path
-from typing import Iterable, List, Union, Dict, Tuple, Optional, Sequence
+from typing import Iterable, List, Union, Dict, Tuple, Optional, Sequence, \
+    Any
 
 import numpy as np
 import pandas as pd
@@ -15,6 +17,7 @@ import yaml
 import git
 
 StrOrPath = Union[str, Path]
+GymObsRewDoneInfo = Tuple[np.ndarray, float, bool, dict]
 
 
 class MetaWriter():
@@ -317,3 +320,15 @@ def plot_progress(
 
     if xtick_interval:
         ax.xaxis.set_major_locator(mtick.MultipleLocator(xtick_interval))
+
+
+def import_class(class_info: Union[str, dict]) -> Any:
+    def _get_class(class_str: str) -> Any:
+        split = class_str.split('.')
+        return getattr(
+            importlib.import_module('.'.join(split[:-1])), split[-1])
+
+    if isinstance(class_info, str):
+        return _get_class(class_info)
+    else:
+        return _get_class(class_info['cls'])(**class_info['kwargs'])

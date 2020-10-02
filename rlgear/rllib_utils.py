@@ -16,7 +16,7 @@ from ray.rllib.evaluation import MultiAgentEpisode
 from ray.rllib.agents.callbacks import DefaultCallbacks
 
 from .utils import MetaWriter, get_inputs, parse_inputs, get_log_dir, \
-    StrOrPath, dict_str2num
+    StrOrPath, dict_str2num, import_class
 
 
 def make_rllib_metadata_logger(meta_data_writer: MetaWriter) \
@@ -142,7 +142,13 @@ def make_basic_rllib_config(
     for blk in params['rllib']['tune_kwargs_blocks'].split(','):
         kwargs = ray.tune.utils.merge_dicts(kwargs, params['rllib'][blk])
 
-    kwargs['config']['callbacks'] = InfoToCustomMetricsCallback
+    if 'callbacks' not in kwargs['config'] \
+            or not kwargs['config']['callbacks']:
+        kwargs['config']['callbacks'] = \
+            ['rlgear.rllib_utils.InfoToCustomMetricsCallback']
+
+    kwargs['config']['callbacks'] = make_callbacks(
+        [import_class(cls_str) for cls_str in kwargs['config']['callbacks']])
 
     return params, kwargs
 
@@ -156,6 +162,42 @@ class InfoToCustomMetricsCallback(DefaultCallbacks):
         key = list(episode._agent_to_last_info.keys())[0]
         ep_info = episode.last_info_for(key).copy()
         episode.custom_metrics.update(ray.tune.utils.flatten_dict(ep_info))
+
+
+def make_callbacks(callback_classes: Iterable[DefaultCallbacks]) \
+        -> Any:
+    class ListOfCallbacks(DefaultCallbacks):
+        def __init__(self, *args, **kwargs):  # type: ignore
+            super().__init__(*args, **kwargs)
+
+            self.callbacks = \
+                [cb_cls(*args, **kwargs) for cb_cls in callback_classes]
+
+        def on_episode_start(self, *args, **kwargs):  # type: ignore
+            for cb in self.callbacks:
+                cb.on_episode_start(*args, **kwargs)
+
+        def on_episode_step(self, *args, **kwargs):  # type: ignore
+            for cb in self.callbacks:
+                cb.on_episode_step(*args, **kwargs)
+
+        def on_episode_end(self, *args, **kwargs):  # type: ignore
+            for cb in self.callbacks:
+                cb.on_episode_step(*args, **kwargs)
+
+        def on_postprocess_trajectory(self, *args, **kwargs):  # type: ignore
+            for cb in self.callbacks:
+                cb.on_postprocess_trajectory(*args, **kwargs)
+
+        def on_sample_end(self, *args, **kwargs):  # type: ignore
+            for cb in self.callbacks:
+                cb.on_sample_end(*args, **kwargs)
+
+        def on_train_result(self, *args, **kwargs):  # type: ignore
+            for cb in self.callbacks:
+                cb.on_train_result(*args, **kwargs)
+
+    return ListOfCallbacks
 
 
 def gen_passwd(size: int) -> str:

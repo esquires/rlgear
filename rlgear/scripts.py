@@ -9,6 +9,7 @@ def plot_progress_script() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('base_dirs', nargs='+')
     parser.add_argument('tag')
+    parser.add_argument('--x_tag', default='timesteps_total')
     parser.add_argument('--percentiles', type=float, nargs=2)
     parser.add_argument('--names', nargs='+')
     parser.add_argument('--alpha', type=float, default=0.1)
@@ -20,7 +21,7 @@ def plot_progress_script() -> None:
 
     ax = plt.subplots()[1]
     rlgear.utils.plot_progress(
-        ax, args.base_dirs, args.tag, args.names,
+        ax, args.base_dirs, args.tag, args.x_tag, args.names,
         args.only_complete_data, args.show_same_num_timesteps,
         args.percentiles, args.alpha, args.xtick_interval)
     ax.legend()

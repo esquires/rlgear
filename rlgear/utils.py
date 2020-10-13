@@ -292,7 +292,15 @@ def plot_progress(
     out_dfs = []
     for d in base_dirs:
         progress_files = list(Path(d).rglob('progress.csv'))
-        dfs = [pd.read_csv(f) for f in progress_files]
+
+        # this is not a list comprehension because there are cases
+        # where the progress.csv file exists but is empty
+        dfs = []
+        for fname in progress_files:
+            try:
+                dfs.append(pd.read_csv(fname))
+            except pd.errors.EmptyDataError:
+                print(f'{fname} is empty, skipping')
 
         for i, df in enumerate(dfs):
             try:

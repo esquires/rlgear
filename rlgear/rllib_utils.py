@@ -147,8 +147,10 @@ def make_basic_rllib_config(
         kwargs['config']['callbacks'] = \
             ['rlgear.rllib_utils.InfoToCustomMetricsCallback']
 
-    kwargs['config']['callbacks'] = make_callbacks(
-        [import_class(cls_str) for cls_str in kwargs['config']['callbacks']])
+    cb_classes = \
+        [import_class(cls_str) for cls_str in kwargs['config']['callbacks']]
+    kwargs['config']['callbacks'] = \
+        make_callbacks(cb_classes) if len(cb_classes) > 1 else cb_classes[0]
 
     return params, kwargs
 

@@ -37,6 +37,9 @@ def make_agent(yaml_file: Path, search_dirs: Iterable[StrOrPath], env: Any) \
     trainer_cls = ray.tune.registry.get_trainable_cls(
         kwargs['run_or_experiment'])
 
+    if 'callbacks' in kwargs['config']:
+        del kwargs['config']['callbacks']
+
     # https://github.com/ray-project/ray/issues/6809
     kwargs['config']['num_gpus'] = 0
     kwargs['config']['num_workers'] = 0
@@ -67,8 +70,6 @@ def ckpt_to_yaml(ckpt: Path) -> Path:
 class SelfPlay:
     def __init__(self, prev_paths: Iterable[str], watch_path: str):
         self.watch_path = watch_path
-        # Path.rglob gave errors when there is are temporary files created
-        # during the glob
         print(('SelfPlay: building initial checkpoints set. '
                'This may take a while...'))
         prior_ckpts_set: Set[Path] = set()
@@ -80,7 +81,7 @@ class SelfPlay:
     # pylint: disable=no-self-use
     def _build_ckpts(self, path: str, ckpts: Set[Path]) \
             -> None:
-        # Path.rglob gave errors when there is are temporary files created
+        # Path.rglob gave errors when there are temporary files created
         # during the glob
         for root, _, filenames in os.walk(path):
             for filename in fnmatch.filter(filenames, '*.tune_metadata'):

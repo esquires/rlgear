@@ -77,7 +77,7 @@ def dqn_cnn(obs_shape: Sequence[int]) -> Tuple[List[nn.Module], List[int]]:
 
 
 # pylint: disable=abstract-method
-class TorchForwardModel(TorchModelV2, nn.Module):
+class TorchModel(TorchModelV2, nn.Module):
     def __init__(self, *args, **kwargs):  # type: ignore
         TorchModelV2.__init__(self, *args, **kwargs)
         nn.Module.__init__(self)
@@ -102,9 +102,22 @@ class TorchForwardModel(TorchModelV2, nn.Module):
         assert self._cur_value is not None, "must call forward() first"
         return self._cur_value
 
+    # pylint: disable=no-self-use
+    def _state_helper(
+            self, module: nn.Module, lstm_cell_size: int) \
+            -> List[torch.Tensor]:
+        # https://github.com/ray-project/ray/blob/master/rllib/examples/models/rnn_model.py
+        # make hidden states on same device as model
+        new = module.weight.new  # type: ignore
+        h = [
+            new(1, lstm_cell_size).zero_().squeeze(0),  # type: ignore
+            new(1, lstm_cell_size).zero_().squeeze(0),  # type: ignore
+        ]
+        return h
+
 
 # pylint: disable=too-many-instance-attributes
-class FCNet(TorchForwardModel):
+class FCNet(TorchModel):
     """Same as torch/fcnet.py in rllib but does not share pi/value layers."""
 
     def __init__(
@@ -146,7 +159,7 @@ class FCNet(TorchForwardModel):
 
 
 # pylint: disable=abstract-method
-class TorchDQNModel(TorchForwardModel):
+class TorchDQNModel(TorchModel):
     def __init__(
             self, obs_space: gym.Space, action_space: gym.Space,
             num_outputs: int, model_config: dict, name: str):
@@ -172,7 +185,7 @@ class TorchDQNModel(TorchForwardModel):
         return self._forward_helper(x), state
 
 
-class TorchDQNLSTMModel(TorchForwardModel):
+class TorchDQNLSTMModel(TorchModel):
     def __init__(
             self, obs_space: gym.Space, action_space: gym.Space,
             num_outputs: int, model_config: dict, name: str):
@@ -221,16 +234,10 @@ class TorchDQNLSTMModel(TorchForwardModel):
 
     @override(ModelV2)
     def get_initial_state(self) -> List[torch.Tensor]:
-        # make hidden states on same device as model
-        new = self.cnn[-2].weight.new  # type: ignore
-        h = [
-            new(1, self.lstm_cell_size).zero_().squeeze(0),  # type: ignore
-            new(1, self.lstm_cell_size).zero_().squeeze(0),  # type: ignore
-        ]
-        return h
+        return self._state_helper(self.cnn[-2], self.lstm_cell_size)
 
 
-class TorchImpalaModel(TorchForwardModel):
+class TorchImpalaModel(TorchModel):
     """Implementation of Impala model in pytorch.
 
     see here:

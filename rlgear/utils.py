@@ -1,5 +1,6 @@
 import sys
 import importlib
+import copy
 import shutil
 import re
 import subprocess as sp
@@ -339,4 +340,16 @@ def import_class(class_info: Union[str, dict]) -> Any:
     if isinstance(class_info, str):
         return _get_class(class_info)
     else:
-        return _get_class(class_info['cls'])(**class_info['kwargs'])
+        kwargs = class_info['kwargs']
+        keys = copy.deepcopy(list(kwargs.keys()))
+        for key in keys:
+            if key.startswith('__preprocess_'):
+                kwargs[key.replace('__preprocess_', '')] = \
+                    import_class(kwargs[key])
+                del kwargs[key]
+
+        try:
+            return _get_class(class_info['cls'])(**class_info['kwargs'])
+        except Exception as e:
+            print(f'could not initialize {class_info}')
+            raise e

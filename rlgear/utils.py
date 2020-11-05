@@ -180,7 +180,11 @@ def get_inputs(
         with open(filepath, 'r') as f:
             params = yaml.safe_load(f)
 
-        for inp in params.get('__inputs__', []):
+        temp_inputs = params.get('__inputs__', [])
+        if isinstance(temp_inputs, str):
+            temp_inputs = [temp_inputs]
+
+        for inp in temp_inputs:
             _get_inputs(inp)
 
         inputs.append(filepath)

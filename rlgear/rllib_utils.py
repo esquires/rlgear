@@ -97,6 +97,7 @@ def add_rlgear_args(parser: argparse.ArgumentParser) \
     parser.add_argument('yaml_file')
     parser.add_argument('exp_name')
     parser.add_argument('--overrides')
+    parser.add_argument('--debug', action='store_true')
     return parser
 
 
@@ -104,7 +105,8 @@ def make_basic_rllib_config(
         yaml_file: StrOrPath,
         exp_name: str,
         search_dirs: Union[StrOrPath, Iterable[StrOrPath]],
-        overrides: dict = None) \
+        debug: bool,
+        overrides: dict) \
         -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     inputs = get_inputs(yaml_file, search_dirs)
@@ -113,8 +115,6 @@ def make_basic_rllib_config(
     # override the non-rllib blocks
     if overrides is not None:
         params = ray.tune.utils.merge_dicts(params, overrides)
-
-    log_dir = get_log_dir(params['log'], yaml_file, exp_name)
 
     loggers = list(ray.tune.logger.DEFAULT_LOGGERS)
 
@@ -135,12 +135,21 @@ def make_basic_rllib_config(
         'config': {
             "log_level": "INFO",
         },
-        'local_dir': str(log_dir),
+        'local_dir': str(get_log_dir(params['log'], yaml_file, exp_name)),
         'loggers': loggers
     }
 
     for blk in params['rllib']['tune_kwargs_blocks'].split(','):
         kwargs = ray.tune.utils.merge_dicts(kwargs, params['rllib'][blk])
+
+    if debug:
+        kwargs['local_dir'] = os.path.join(kwargs['local_dir'], 'debug')
+        kwargs['config']['num_workers'] = 0
+        kwargs['config']['num_gpus'] = 0
+        if kwargs['verbose'] == 0:
+            kwargs['verbose'] = 1
+        if kwargs['config']['log_level'] in ['ERROR', 'WARN']:
+            kwargs['config']['log_level'] = 'INFO'
 
     if 'callbacks' not in kwargs['config'] \
             or not kwargs['config']['callbacks']:

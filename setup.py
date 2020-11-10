@@ -16,9 +16,9 @@ setup(
         "gym",
         "dataclasses",
         # ray packages
-        "ray[debug]>=1.0.0",
-        "ray[tune]>=1.0.0",
-        "ray[rllib]>=1.0.0",
+        "ray[debug]>=0.8.7",
+        "ray[tune]>=0.8.7",
+        "ray[rllib]>=0.8.7",
         # extra rllib dependencies that don't come through automatically
         "crc32c",
         "requests",

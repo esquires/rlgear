@@ -291,6 +291,7 @@ def plot_progress(
         xtick_interval: Optional[float] = None,
         max_step: int = None) -> None:
 
+    base_dirs = [d for d in base_dirs if Path(d).is_dir()]
     if not names:
         names = [Path(d).name for d in base_dirs]
 

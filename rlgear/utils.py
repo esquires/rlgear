@@ -262,6 +262,36 @@ def shorten_dfs(_dfs: Sequence[pd.DataFrame], max_step: int = None) -> None:
         _dfs[i] = _df[_df.index <= max_step]  # type: ignore
 
 
+def preprocess_pbt_df(df: pd.DataFrame, x_tag: str) -> pd.DataFrame:
+    """Align the x_tag index used in plot_progress before plotting.
+
+    Args:
+    ----
+        df (pd.DataFrame): Dataframe of the progress.csv file
+        x_tag (str): Desired tag in df to use as index of plot
+
+    Return:
+    ------
+        df (pd.DataFrame): Dataframe with the x_tag column aligned to plot
+
+    """
+    tag_diff = '{}_diff'.format(x_tag)
+    df[tag_diff] = df[x_tag].diff()
+    # find the indexes where overlap starts
+    neg_diff = df.loc[df[tag_diff] < 0].index.to_list()
+    # if no overlap is found return the original dataframe
+    if len(neg_diff) == 0:
+        return df
+    else:
+        for val in neg_diff:
+            start = val
+            end = len(df)
+            # shift x_tag values by the overlapping amount
+            df[x_tag][start:end] += df[tag_diff][start-2] + \
+                abs(df[tag_diff][start])
+    return df
+
+
 def plot_percentiles(
         ax: plt.axis, df: pd.DataFrame, percentiles: Tuple[float, float],
         alpha: float) -> None:
@@ -278,11 +308,13 @@ def plot_percentiles(
 
 
 # pylint: disable=too-many-locals
+# pylint: disable=too-many-branches
 def plot_progress(
         ax: plt.axis,
         base_dirs: Iterable[StrOrPath],
         tag: str,
         x_tag: str = 'timesteps_total',
+        preprocess_pbt: bool = False,
         names: Optional[Iterable[str]] = None,
         only_complete_data: bool = False,
         show_same_num_timesteps: bool = False,
@@ -310,6 +342,8 @@ def plot_progress(
 
         for i, df in enumerate(dfs):
             try:
+                if preprocess_pbt:
+                    df = preprocess_pbt_df(df, x_tag)
                 dfs[i] = df[[x_tag, tag]].set_index(x_tag)
             except KeyError as e:
                 print(f'available keys are {df.columns}')

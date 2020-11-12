@@ -1,11 +1,11 @@
 import functools
 from typing import Dict, Sequence, Union, Any, Iterable, List, Tuple, Optional
 
-import numpy as np
-import gym
-
 import torch
 import torch.nn as nn
+
+import numpy as np
+import gym
 
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from ray.rllib.models.modelv2 import ModelV2

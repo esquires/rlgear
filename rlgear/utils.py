@@ -263,16 +263,31 @@ def shorten_dfs(_dfs: Sequence[pd.DataFrame], max_step: int = None) -> None:
 
 
 def preprocess_pbt_df(df: pd.DataFrame, x_tag: str) -> pd.DataFrame:
+    """Align the x_tag index used in plot_progress before plotting.
+
+    Args:
+    ----
+        df (pd.DataFrame): Dataframe of the progress.csv file
+        x_tag (str): Desired tag in df to use as index of plot
+
+    Return:
+    ------
+        df (pd.DataFrame): Dataframe with the x_tag column aligned to plot
+
+    """
     tag_diff = '{}_diff'.format(x_tag)
     df[tag_diff] = df[x_tag].diff()
+    # find the indexes where overlap starts
     neg_diff = df.loc[df[tag_diff] < 0].index.to_list()
+    # if no overlap is found return the original dataframe
     if len(neg_diff) == 0:
         return df
     else:
-        for _, val in enumerate(neg_diff):
+        for val in neg_diff:
             start = val
             end = len(df)
-            df[x_tag][start:end] += df[tag_diff][start-2] +\
+            # shift x_tag values by the overlapping amount
+            df[x_tag][start:end] += df[tag_diff][start-2] + \
                 abs(df[tag_diff][start])
     return df
 

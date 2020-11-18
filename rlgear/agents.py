@@ -8,14 +8,22 @@ import gym
 
 import ray.tune
 from ray.rllib.agents.trainer import Trainer
+from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
 from .utils import get_inputs, dict_str2num, parse_inputs, StrOrPath
 
 
-def make_dummy_env(ob_space: gym.Space, ac_space: gym.Space) \
+def make_dummy_env(
+        ob_space: gym.Space, ac_space: gym.Space, multiagent: bool) \
         -> Any:
     # https://github.com/ray-project/ray/issues/6809
-    class DummyEnv:
+    class Empty:
+        pass
+
+    base = MultiAgentEnv if multiagent else Empty
+
+    # pylint: disable=abstract-method
+    class DummyEnv(base):  # type: ignore
         observation_space = ob_space
         action_space = ac_space
 
@@ -25,7 +33,7 @@ def make_dummy_env(ob_space: gym.Space, ac_space: gym.Space) \
     return DummyEnv
 
 
-def make_agent(yaml_file: Path, search_dirs: Iterable[StrOrPath], env: Any) \
+def make_agent(yaml_file: Path, search_dirs: Iterable[StrOrPath]) \
         -> Trainer:
     inputs = get_inputs(yaml_file, search_dirs)
     params = dict_str2num(parse_inputs(inputs))
@@ -50,7 +58,7 @@ def make_agent(yaml_file: Path, search_dirs: Iterable[StrOrPath], env: Any) \
               'sgd_minibatch_size', 'train_batch_size']:
         kwargs['config'][k] = 0
 
-    return trainer_cls(kwargs['config'], env=env)
+    return trainer_cls, kwargs
 
 
 def ckpt_to_yaml(ckpt: Path) -> Path:

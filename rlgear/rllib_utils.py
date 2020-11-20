@@ -16,7 +16,7 @@ from ray.rllib.evaluation import MultiAgentEpisode
 from ray.rllib.agents.callbacks import DefaultCallbacks
 
 from .utils import MetaWriter, get_inputs, parse_inputs, get_log_dir, \
-    StrOrPath, dict_str2num, import_class
+    StrOrPath, dict_str2num, import_class, dict_import_class
 
 
 def make_rllib_metadata_logger(meta_data_writer: MetaWriter) \
@@ -111,6 +111,7 @@ def make_basic_rllib_config(
 
     inputs = get_inputs(yaml_file, search_dirs)
     params = dict_str2num(parse_inputs(inputs))
+    params = dict_import_class(params)
 
     # override the non-rllib blocks
     if overrides is not None:

@@ -227,6 +227,19 @@ def dict_str2num(d: dict) -> dict:
     return d
 
 
+def dict_import_class(d: dict) -> dict:
+    keys = list(d.keys())  # copy
+    tgt_keys = {'cls', 'kwargs', "__dict_import_class"}
+    for k in keys:
+        if isinstance(d[k], dict):
+            d[k] = dict_import_class(d[k])
+
+            if set(d[k].keys()) == tgt_keys and d[k]["__dict_import_class"]:
+                d[k] = import_class(d[k])
+
+    return d
+
+
 def get_latest_checkpoint(ckpt_root_dir: str) -> str:
     ckpts = [str(c) for c in Path(ckpt_root_dir).rglob('*checkpoint-*')
              if 'meta' not in str(c)]

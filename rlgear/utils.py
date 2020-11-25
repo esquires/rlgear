@@ -1,5 +1,6 @@
 import sys
 import importlib
+import pickle
 import copy
 import shutil
 import re
@@ -21,12 +22,14 @@ StrOrPath = Union[str, Path]
 GymObsRewDoneInfo = Tuple[np.ndarray, float, bool, dict]
 
 
+# pylint: disable=too-many-instance-attributes
 class MetaWriter():
     def __init__(
             self,
             repo_roots: Union[Iterable[StrOrPath], StrOrPath],
             files: Union[Iterable[StrOrPath], StrOrPath],
             str_data: Optional[Dict[str, str]] = None,
+            objs_to_pickle: Optional[List[Any]] = None,
             print_log_dir: bool = True,
             symlink_dir: str = ".",
             check_clean: Union[Iterable[bool], bool] = False):
@@ -42,6 +45,7 @@ class MetaWriter():
 
         self.files = _to_list_of_paths(files)
         self.str_data = str_data or {}
+        self.objs_to_pickle = objs_to_pickle
         self.symlink_dir = Path(symlink_dir).expanduser()
 
         try:
@@ -81,6 +85,7 @@ class MetaWriter():
                     'commit': repo.commit().name_rev,
                     'diff': diff}
 
+    # pylint: disable=too-many-locals
     def write(self, logdir: str) -> None:
         if self.print_log_dir:
             print(f'log dir: {logdir}')
@@ -100,6 +105,10 @@ class MetaWriter():
         for fname_str, data in self.str_data.items():
             with open(meta_dir / fname_str, 'w') as f:
                 f.write(data)
+
+        if self.objs_to_pickle:
+            with open(meta_dir / 'objs_to_pickle.p', 'wb') as fp:
+                pickle.dump(self.objs_to_pickle, fp)
 
         for fname in self.files:
             shutil.copy2(fname, meta_dir)

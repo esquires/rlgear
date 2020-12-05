@@ -236,17 +236,27 @@ def dict_str2num(d: dict) -> dict:
     return d
 
 
-def dict_import_class(d: dict) -> dict:
-    keys = list(d.keys())  # copy
-    tgt_keys = {'cls', 'kwargs', "__dict_import_class"}
-    for k in keys:
-        if isinstance(d[k], dict):
-            d[k] = dict_import_class(d[k])
+def dict_import_class(seq: Any) -> Any:
 
-            if set(d[k].keys()) == tgt_keys and d[k]["__dict_import_class"]:
-                d[k] = import_class(d[k])
+    if isinstance(seq, (list, tuple)):
+        return [dict_import_class(val) for val in seq]
+    elif isinstance(seq, dict):
 
-    return d
+        d = seq
+        keys = list(d.keys())  # copy
+        tgt_keys = {'cls', 'kwargs', "__dict_import_class"}
+        for k in keys:
+            if hasattr(d[k], '__iter__'):
+                d[k] = dict_import_class(d[k])
+
+                if isinstance(d[k], dict) and \
+                        set(d[k].keys()) == tgt_keys and \
+                        d[k]["__dict_import_class"]:
+                    d[k] = import_class(d[k])
+
+        return d
+    else:
+        return seq
 
 
 def get_latest_checkpoint(ckpt_root_dir: str) -> str:

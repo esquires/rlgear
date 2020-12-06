@@ -19,9 +19,5 @@ def test_import_class() -> None:
     assert all(box_obj.high == [1, 1])
 
 
-def main() -> None:
-    test_import_class()
-
-
 if __name__ == '__main__':
-    main()
+    test_import_class()

@@ -12,6 +12,7 @@ from ray.rllib.models.modelv2 import ModelV2
 from ray.rllib.utils.annotations import override
 from ray.rllib.models.torch.misc import same_padding
 from ray.rllib.policy.rnn_sequencing import add_time_dimension
+from ray.rllib.policy.view_requirement import ViewRequirement
 
 
 def xavier_init(m: nn.Module) -> None:
@@ -101,6 +102,14 @@ class TorchModel(TorchModelV2, nn.Module):
     def value_function(self) -> torch.Tensor:
         assert self._cur_value is not None, "must call forward() first"
         return self._cur_value
+
+    def _declare_states(self, sizes: Sequence[int]) -> None:
+        # see rllib/examples/models/rnn_model.py
+        req = self.inference_view_requirements
+        for i, size in enumerate(sizes):
+            space = gym.spaces.Box(-1.0, 1.0, shape=(size,))
+            req[f"state_in_{i}"] = ViewRequirement(  # type: ignore
+                f"state_out_{i}", shift=-1, space=space)
 
     # pylint: disable=no-self-use
     def _state_helper(

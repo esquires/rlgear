@@ -424,3 +424,13 @@ def import_class(class_info: Union[str, dict]) -> Any:
         except Exception as e:
             print(f'could not initialize {class_info}')
             raise e
+
+
+def smooth(values: Sequence[float], weight: float) -> Sequence[float]:
+    # https://stackoverflow.com/a/49357445
+    smoothed = []
+    smoothed.append(values[0])
+    for v in values[1:]:
+        smoothed.append(smoothed[-1] * weight + v * (1 - weight))
+
+    return smoothed

@@ -24,6 +24,7 @@ setup(
         "requests",
         "dm-tree",
         "lz4",
+        "tqdm",
     ],
     entry_points={
         'console_scripts':

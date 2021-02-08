@@ -11,6 +11,7 @@ from typing import Iterable, List, Union, Dict, Tuple, Optional, Sequence, \
 
 import numpy as np
 import pandas as pd
+import tqdm
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
@@ -22,7 +23,7 @@ StrOrPath = Union[str, Path]
 GymObsRewDoneInfo = Tuple[np.ndarray, float, bool, dict]
 
 
-# pylint: disable=too-many-instance-attributes
+# pylint: disable=too-many-instance-attributes,too-many-arguments
 class MetaWriter():
     def __init__(
             self,
@@ -339,8 +340,7 @@ def plot_percentiles(
     ax.fill_between(df.index, pct_low, pct_high, alpha=alpha)
 
 
-# pylint: disable=too-many-locals
-# pylint: disable=too-many-branches
+# pylint: disable=too-many-locals,too-many-branches,too-many-arguments
 def plot_progress(
         ax: plt.axis,
         base_dirs: Iterable[StrOrPath],
@@ -353,14 +353,19 @@ def plot_progress(
         percentiles: Optional[Tuple[float, float]] = None,
         alpha: float = 0.1,
         xtick_interval: Optional[float] = None,
-        max_step: int = None) -> None:
+        max_step: int = None,
+        show_progress: bool = False) -> None:
 
-    base_dirs = [d for d in base_dirs if Path(d).is_dir()]
+    dirs = [d for d in base_dirs if Path(d).is_dir()]
+    if dirs != list(base_dirs):
+        print(('The following base_dirs were not found: '
+               f'{set(base_dirs) - set(dirs)}'))
+
     if not names:
-        names = [Path(d).name for d in base_dirs]
+        names = [Path(d).name for d in dirs]
 
     out_dfs = []
-    for d in base_dirs:
+    for d in tqdm.tqdm(dirs, desc="Reading files") if show_progress else dirs:
         progress_files = list(Path(d).rglob('progress.csv'))
 
         # this is not a list comprehension because there are cases

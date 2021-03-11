@@ -69,7 +69,8 @@ disable=missing-module-docstring,
     no-else-return,
     too-many-arguments,
     attribute-defined-outside-init,
-    protected-access
+    protected-access,
+    use-a-generator
 
 
 # Enable the message, report, category or checker with the given id(s). You can

@@ -142,11 +142,16 @@ class InfoToCustomMetricsCallback(DefaultCallbacks):
 def make_callbacks(callback_classes: Iterable[DefaultCallbacks]) \
         -> Any:
     class ListOfCallbacks(DefaultCallbacks):
+
+        # this allows the callback classes to be altered after the
+        # closure has run
+        CALLBACK_CLASSES = callback_classes
+
         def __init__(self, *args, **kwargs):  # type: ignore
             super().__init__(*args, **kwargs)
 
             self.callbacks = \
-                [cb_cls(*args, **kwargs) for cb_cls in callback_classes]
+                [cb_cls(*args, **kwargs) for cb_cls in self.CALLBACK_CLASSES]
 
         def on_episode_start(self, *args, **kwargs):  # type: ignore
             for cb in self.callbacks:

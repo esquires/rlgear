@@ -28,6 +28,6 @@ setup(
     ],
     entry_points={
         'console_scripts':
-            ['plot-progress=rlgear.scripts:plot_progress_script'],
+            ['copy-trial-data=rlgear.scripts:copy_trial_data'],
     }
 )

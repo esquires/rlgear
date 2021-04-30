@@ -85,7 +85,8 @@ class TorchModel(TorchModelV2, nn.Module):
         self._cur_value = None
 
     def _make_linear_head(self, inp_size: int) -> None:
-        self.pi_layer = nn.Linear(inp_size, self.num_outputs)  # type: ignore
+        self.pi_layer = \
+            nn.Linear(inp_size, int(self.num_outputs))  # type: ignore
         self.v_layer = nn.Linear(inp_size, 1)
         init_modules([self.pi_layer, self.v_layer])
 

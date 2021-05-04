@@ -4,6 +4,7 @@ import pickle
 import copy
 import shutil
 import re
+import pprint
 import subprocess as sp
 from pathlib import Path
 from typing import Iterable, List, Union, Dict, Tuple, Optional, Sequence, \
@@ -341,30 +342,22 @@ def plot_percentiles(
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-arguments
-def plot_progress(
-        ax: plt.axis,
+def get_progress(
         base_dirs: Iterable[StrOrPath],
         tag: str,
         x_tag: str = 'timesteps_total',
         preprocess_pbt: bool = False,
-        names: Optional[Iterable[str]] = None,
         only_complete_data: bool = False,
         show_same_num_timesteps: bool = False,
-        percentiles: Optional[Tuple[float, float]] = None,
-        alpha: float = 0.1,
-        xtick_interval: Optional[float] = None,
         max_step: int = None,
-        show_progress: bool = False) -> None:
+        show_progress: bool = False) -> List[pd.DataFrame]:
 
     dirs = [d for d in base_dirs if Path(d).is_dir()]
     if dirs != list(base_dirs):
         print(('The following base_dirs were not found: '
                f'{set(base_dirs) - set(dirs)}'))
 
-    if not names:
-        names = [Path(d).name for d in dirs]
-
-    out_dfs = []
+    out_dfs: List[pd.DataFrame] = []
     for d in tqdm.tqdm(dirs, desc="Reading files") if show_progress else dirs:
         progress_files = list(Path(d).rglob('progress.csv'))
 
@@ -373,23 +366,29 @@ def plot_progress(
         dfs = []
         for fname in progress_files:
             try:
-                dfs.append(pd.read_csv(fname))
+                dfs.append(pd.read_csv(fname, low_memory=False))
             except pd.errors.EmptyDataError:
                 print(f'{fname} is empty, skipping')
 
-        for i, df in enumerate(dfs):
+        i = 0
+        while i < len(dfs):
             try:
-                if preprocess_pbt:
-                    df = preprocess_pbt_df(df, x_tag)
+                df = preprocess_pbt_df(dfs[i], x_tag) \
+                    if preprocess_pbt else dfs[i]
                 dfs[i] = df[[x_tag, tag]].set_index(x_tag)
+                i += 1
             except KeyError as e:
-                print(f'available keys are {df.columns}')
-                raise e
+                print(e)
+                print(f'Error setting index for {progress_files[i]}')
+                pprint.pprint(f'available keys are {list(df.columns)}')
+                pprint.pprint('skipping')
+                del dfs[i]
 
         if only_complete_data:
             shorten_dfs(dfs)
 
-        out_dfs.append(merge_dfs(dfs))
+        if dfs:
+            out_dfs.append(merge_dfs(dfs))
 
     if show_same_num_timesteps:
         shorten_dfs(out_dfs)
@@ -397,7 +396,18 @@ def plot_progress(
     if max_step is not None:
         shorten_dfs(out_dfs, max_step)
 
-    for name, df in zip(names, out_dfs):
+    return out_dfs
+
+
+def plot_progress(
+        ax: plt.axis,
+        dfs: List[pd.DataFrame],
+        names: Iterable[str],
+        percentiles: Optional[Tuple[float, float]] = None,
+        alpha: float = 0.1,
+        xtick_interval: Optional[float] = None) -> None:
+
+    for name, df in zip(names, dfs):
         ax.plot(df.index, df.mean(axis=1), label=name)
 
         if percentiles:
@@ -436,6 +446,9 @@ def smooth(values: Sequence[float], weight: float) -> Sequence[float]:
     smoothed = []
     smoothed.append(values[0])
     for v in values[1:]:
-        smoothed.append(smoothed[-1] * weight + v * (1 - weight))
+        if np.isnan(v):
+            smoothed.append(smoothed[-1])
+        else:
+            smoothed.append(smoothed[-1] * weight + v * (1 - weight))
 
     return smoothed

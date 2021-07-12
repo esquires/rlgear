@@ -121,10 +121,10 @@ class MetaWriter():
         with open(meta_dir / 'requirements.txt', 'w') as f:
             f.write(self.requirements)
 
-        for repo_name in self.git_info:
-            commit = self.git_info[repo_name]['commit']
+        for repo_name, repo_data in self.git_info.items():
+            commit = repo_data['commit']
             commit_only = commit.split(" ")[0]
-            repo_dir = self.git_info[repo_name]['repo_dir']
+            repo_dir = repo_data['repo_dir']
 
             meta_repo_dir = meta_dir / repo_name
             meta_repo_dir.mkdir(exist_ok=True)
@@ -140,10 +140,10 @@ class MetaWriter():
                 f"sp.call(['git', 'checkout', '{commit_only}'], cwd=repo_dir)",
             ]
 
-            if self.git_info[repo_name]['diff']:
+            if repo_data['diff']:
                 diff_file = meta_repo_dir / (repo_name + '_diff.diff')
                 with open(diff_file, 'w') as f:
-                    f.write(self.git_info[repo_name]['diff'])
+                    f.write(repo_data['diff'])
                 code.append(
                     (f"sp.call(['git', 'apply', '{diff_file.resolve()}'], "
                      "cwd=repo_dir)"))

@@ -25,6 +25,13 @@ setup(
         "dm-tree",
         "lz4",
         "tqdm",
+        # testing dependencies
+        "pytest",
+        "flake8",
+        "pylint",
+        "pydocstyle",
+        "mypy",
+        "types-PyYAML",
     ],
     entry_points={
         'console_scripts':

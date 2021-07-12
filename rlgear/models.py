@@ -1,11 +1,11 @@
 import functools
 from typing import Dict, Sequence, Union, Any, Iterable, List, Tuple, Optional
 
-import torch
-import torch.nn as nn
-
 import numpy as np
 import gym
+
+import torch
+from torch import nn
 
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from ray.rllib.models.modelv2 import ModelV2
@@ -26,6 +26,14 @@ def init_modules(modules: Iterable[nn.Module]) -> None:
         if torch.cuda.is_available():
             m.cuda()
         xavier_init(m)
+
+
+def make_fc_layers(sizes: Sequence[int]) -> List[nn.Module]:
+    layers: List[nn.Module] = []
+    for inp_size, out_size in zip(sizes[:-1], sizes[1:]):
+        layers.append(nn.Linear(inp_size, out_size))
+        layers.append(nn.ReLU())
+    return layers
 
 
 IntOrSeq = Union[int, Sequence]
@@ -136,17 +144,11 @@ class FCNet(TorchModel):
         super().__init__(
             obs_space, action_space, num_outputs, model_config, name)
 
-        def make_layers() -> List[nn.Module]:
-            num_inp = np.product(obs_space.shape)
-            sizes = [num_inp] + model_config['fcnet_hiddens']
-            layers: List[nn.Module] = []
-            for inp_size, out_size in zip(sizes[:-1], sizes[1:]):
-                layers.append(nn.Linear(inp_size, out_size))
-                layers.append(nn.ReLU())
-            return layers
+        num_inp = np.product(obs_space.shape)
+        sizes = [num_inp] + model_config['fcnet_hiddens']
 
-        self.pi_network = nn.Sequential(*make_layers())  # type: ignore
-        self.v_network = nn.Sequential(*make_layers())  # type: ignore
+        self.pi_network = nn.Sequential(*make_fc_layers(sizes))  # type: ignore
+        self.v_network = nn.Sequential(*make_fc_layers(sizes))  # type: ignore
         self._make_linear_head(model_config['fcnet_hiddens'][-1])
         init_modules([self.pi_network, self.v_network])
 

@@ -33,6 +33,18 @@ def test_pylint(python_files: Any) -> None:
 
 # pylint: disable=redefined-outer-name
 def test_mypy(python_files: Any) -> None:
-    subprocess.check_call(
+    # normally we would just do "check_call" but mypy is also reporting
+    # errors with ray and the "--follow-imports=silent" option doesn't seem to
+    # suppress it. This will probably be temporary until the next mypy release
+    # pylint: disable=subprocess-run-check
+    out = subprocess.run(
         ['mypy'] + python_files +
-        ['--disallow-untyped-defs', '--ignore-missing-imports'])
+        ['--disallow-untyped-defs', '--ignore-missing-imports'],
+        stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+    if out.returncode != 0:
+        stdout = out.stdout.decode('utf-8').split('\n')
+        if len(stdout) != 3 or 'misplaced type annotation' not in stdout[0]:
+            print(stdout)
+            raise subprocess.CalledProcessError(
+                out.returncode, out.args,
+                output=out.stdout, stderr=out.stderr)

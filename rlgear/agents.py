@@ -1,7 +1,7 @@
 import os
 import fnmatch
 from pathlib import Path
-from typing import Iterable, Any, Set
+from typing import Iterable, Any, Set, Tuple, Type
 
 import numpy as np
 import gym
@@ -34,7 +34,7 @@ def make_dummy_env(
 
 
 def make_agent(yaml_file: Path, search_dirs: Iterable[StrOrPath]) \
-        -> Trainer:
+        -> Tuple[Type[Trainer], dict]:
     inputs = get_inputs(yaml_file, search_dirs)
     params = dict_str2num(parse_inputs(inputs))
 

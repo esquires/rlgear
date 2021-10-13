@@ -5,7 +5,7 @@ import string
 import random
 import time
 from pathlib import Path
-from typing import Tuple, Any, Iterable, Union, Dict, List
+from typing import Tuple, Any, Iterable, Union, Dict, List, Type
 
 import yaml
 import ray
@@ -18,7 +18,7 @@ from .utils import MetaWriter, get_inputs, parse_inputs, get_log_dir, \
 
 
 def make_rllib_metadata_logger(meta_data_writer: MetaWriter) \
-        -> ray.tune.logger.Logger:
+        -> Type[ray.tune.logger.Logger]:
     class RllibLogMetaData(ray.tune.logger.Logger):
         def _init(self) -> None:
             self.meta_data_writer = meta_data_writer
@@ -33,7 +33,7 @@ def make_rllib_metadata_logger(meta_data_writer: MetaWriter) \
 def make_filtered_tblogger(
         regex_filters: List[str],
         time_elapsed: float = 0,
-        train_iters: int = 0) -> ray.tune.logger.Logger:
+        train_iters: int = 0) -> Type[ray.tune.logger.TBXLogger]:
     class FilteredTbLogger(ray.tune.logger.TBXLogger):
         def _init(self) -> None:
             super()._init()

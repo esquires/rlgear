@@ -2,7 +2,7 @@
 .mypy*
 *egg-info*
 *.pyc
-tags
+tags*
 _vizdoom.ini
 *.npy
 .cache

@@ -25,13 +25,12 @@ RUN source ~/venvs/rlgear/bin/activate && \
 
 COPY ./ /root/rlgear
 WORKDIR /root/rlgear
-RUN rm -rf $(find -name '*.pyc' -o -name '__pycache__')
 RUN source ~/venvs/rlgear/bin/activate && \
   pip install . && \
   rm -rf ~/.cache/pip
 
 RUN source ~/venvs/rlgear/bin/activate && \
-  pip install -U mypy flake8 pylint pydocstyle pytest 'pytest-xdist[psutil]' pytest-timeout && \
+  pip install -U .[test] 'pytest-xdist[psutil]' pytest-timeout && \
   pip install . && \
   rm -rf ~/.cache/pip
 

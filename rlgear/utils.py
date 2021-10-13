@@ -105,7 +105,7 @@ class MetaWriter():
         meta_dir.mkdir(exist_ok=True)
 
         for fname_str, data in self.str_data.items():
-            with open(meta_dir / fname_str, 'w') as f:
+            with open(meta_dir / fname_str, 'w', encoding='UTF-8') as f:
                 f.write(data)
 
         if self.objs_to_pickle:
@@ -115,10 +115,10 @@ class MetaWriter():
         for fname in self.files:
             shutil.copy2(fname, meta_dir)
 
-        with open(meta_dir / 'args.txt', 'w') as f:
+        with open(meta_dir / 'args.txt', 'w', encoding='UTF-8') as f:
             f.write(self.cmd)
 
-        with open(meta_dir / 'requirements.txt', 'w') as f:
+        with open(meta_dir / 'requirements.txt', 'w', encoding='UTF-8') as f:
             f.write(self.requirements)
 
         for repo_name, repo_data in self.git_info.items():
@@ -129,7 +129,8 @@ class MetaWriter():
             meta_repo_dir = meta_dir / repo_name
             meta_repo_dir.mkdir(exist_ok=True)
 
-            with open(meta_repo_dir / (repo_name + '_commit.txt'), 'w') as f:
+            with open(meta_repo_dir / (repo_name + '_commit.txt'),
+                      'w', encoding='UTF-8') as f:
                 f.write(commit)
 
             code = [
@@ -142,13 +143,14 @@ class MetaWriter():
 
             if repo_data['diff']:
                 diff_file = meta_repo_dir / (repo_name + '_diff.diff')
-                with open(diff_file, 'w') as f:
+                with open(diff_file, 'w', encoding='UTF-8') as f:
                     f.write(repo_data['diff'])
                 code.append(
                     (f"sp.call(['git', 'apply', '{diff_file.resolve()}'], "
                      "cwd=repo_dir)"))
 
-            with open(meta_repo_dir / (repo_name + '_restore.py'), 'w') as f:
+            with open(meta_repo_dir / (repo_name + '_restore.py'),
+                      'w', encoding='UTF-8') as f:
                 f.write("\n".join(code))
 
 
@@ -188,7 +190,7 @@ def get_inputs(
 
     def _get_inputs(fname: StrOrPath) -> None:
         filepath = find_filepath(fname, search_dirs)
-        with open(filepath, 'r') as f:
+        with open(filepath, 'r', encoding='UTF-8') as f:
             params = yaml.safe_load(f)
 
         temp_inputs = params.get('__inputs__', [])
@@ -211,7 +213,7 @@ def parse_inputs(inputs: Iterable[StrOrPath]) -> dict:
 
     out: dict = {}
     for inp in inputs:
-        with open(inp, 'r') as f:
+        with open(inp, 'r', encoding='UTF-8') as f:
             params = yaml.safe_load(f)
 
         out = merge_dicts(out, params)
@@ -309,7 +311,7 @@ def preprocess_pbt_df(df: pd.DataFrame, x_tag: str) -> pd.DataFrame:
         df (pd.DataFrame): Dataframe with the x_tag column aligned to plot
 
     """
-    tag_diff = '{}_diff'.format(x_tag)
+    tag_diff = f'{x_tag}_diff'
     df[tag_diff] = df[x_tag].diff()
     # find the indexes where overlap starts
     neg_diff = df.loc[df[tag_diff] < 0].index.to_list()

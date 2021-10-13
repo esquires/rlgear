@@ -16,23 +16,26 @@ setup(
         "gym",
         "dataclasses",
         # ray packages
-        "ray[debug]>=0.8.7",
-        "ray[tune]>=0.8.7",
-        "ray[rllib]>=0.8.7",
+        "ray>=1.6.0",
         # extra rllib dependencies that don't come through automatically
         "crc32c",
         "requests",
         "dm-tree",
         "lz4",
         "tqdm",
-        # testing dependencies
-        "pytest",
-        "flake8",
-        "pylint",
-        "pydocstyle",
-        "mypy",
-        "types-PyYAML",
+        "scikit-image",
+        "tensorboardX"
     ],
+    extras_require={
+        "test": [
+            "pytest",
+            "flake8",
+            "pylint",
+            "pydocstyle",
+            "mypy",
+            "types-PyYAML",
+        ],
+    },
     entry_points={
         'console_scripts':
             ['copy-trial-data=rlgear.scripts:copy_trial_data'],

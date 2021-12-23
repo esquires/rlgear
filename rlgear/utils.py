@@ -12,13 +12,14 @@ from typing import Iterable, List, Union, Dict, Tuple, Optional, Sequence, \
 
 import numpy as np
 import pandas as pd
-import tqdm
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
-
 import yaml
 import git
+
+
+import tqdm
 
 StrOrPath = Union[str, Path]
 GymObsRewDoneInfo = Tuple[np.ndarray, float, bool, dict]

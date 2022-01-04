@@ -292,6 +292,9 @@ def merge_dfs(_dfs: Sequence[pd.DataFrame]) -> pd.DataFrame:
 
 
 def shorten_dfs(_dfs: Sequence[pd.DataFrame], max_step: int = None) -> None:
+    if not _dfs:
+        return
+
     if max_step is None:
         # shortest maximum step among the dfs
         max_step = min([_df.index.max() for _df in _dfs])

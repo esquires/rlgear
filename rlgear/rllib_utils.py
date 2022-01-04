@@ -72,7 +72,7 @@ def make_basic_rllib_config(
         search_dirs: Union[StrOrPath, Iterable[StrOrPath]],
         debug: bool,
         overrides: dict) \
-        -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        -> Tuple[Dict[str, Any], Dict[str, Any], MetaWriter]:
 
     inputs = get_inputs(yaml_file, search_dirs)
     params = dict_str2num(parse_inputs(inputs))
@@ -82,12 +82,12 @@ def make_basic_rllib_config(
 
     loggers = list(ray.tune.logger.DEFAULT_LOGGERS)
 
-    meta_data_writer = MetaWriter(
+    meta_writer = MetaWriter(
         repo_roots=[Path.cwd()] + params['git_repos']['paths'],
         files=inputs,
         str_data={'merged_params.yaml': yaml.dump(params)},
         check_clean=params['git_repos']['check_clean'])
-    loggers.append(make_rllib_metadata_logger(meta_data_writer))
+    loggers.append(make_rllib_metadata_logger(meta_writer))
 
     if 'tb_filter' in params['log']:
         loggers = \
@@ -125,7 +125,7 @@ def make_basic_rllib_config(
     kwargs['config']['callbacks'] = \
         make_callbacks(cb_classes) if len(cb_classes) > 1 else cb_classes[0]
 
-    return params, kwargs
+    return params, kwargs, meta_writer
 
 
 class InfoToCustomMetricsCallback(DefaultCallbacks):

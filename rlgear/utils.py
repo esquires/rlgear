@@ -458,3 +458,15 @@ def smooth(values: Sequence[float], weight: float) -> Sequence[float]:
             smoothed.append(smoothed[-1] * weight + v * (1 - weight))
 
     return smoothed
+
+
+def add_to_dict(overrides: dict, keys: List[str], val: Any) -> None:
+    d = overrides
+    for key in keys[:-1]:
+        try:
+            d = d[key]
+        except KeyError:
+            d[key] = {}
+            d = d[key]
+
+    d[keys[-1]] = val

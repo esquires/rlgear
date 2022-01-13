@@ -44,7 +44,7 @@ def test_mypy(python_files: Any) -> None:
     if out.returncode != 0:
         stdout = out.stdout.decode('utf-8').split('\n')
         if len(stdout) != 3 or 'misplaced type annotation' not in stdout[0]:
-            print(stdout)
+            print('\n'.join(stdout))
             raise subprocess.CalledProcessError(
                 out.returncode, out.args,
                 output=out.stdout, stderr=out.stderr)

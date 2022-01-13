@@ -27,6 +27,8 @@ GymObsRewDoneInfo = Tuple[np.ndarray, float, bool, dict]
 
 # pylint: disable=too-many-instance-attributes,too-many-arguments
 class MetaWriter():
+
+    # pylint: disable=too-many-locals
     def __init__(
             self,
             repo_roots: Union[Iterable[StrOrPath], StrOrPath],
@@ -64,6 +66,9 @@ class MetaWriter():
 
         self.git_info = {}
         for repo_root, check in zip(roots, check_clean):
+            # avoids mypy error:
+            # Trying to read deleted variable "exc"
+            git_exc: Any = git.exc  # type: ignore
             try:
                 repo = git.Repo(repo_root,
                                 search_parent_directories=True)
@@ -72,8 +77,8 @@ class MetaWriter():
                     cwd=repo.working_dir).decode(encoding='UTF-8')
 
             # pylint: disable=no-member
-            except (git.exc.InvalidGitRepositoryError,
-                    git.exc.NoSuchPathError,
+            except (git_exc.InvalidGitRepositoryError,
+                    git_exc.NoSuchPathError,
                     sp.CalledProcessError) as e:
                 print(e)
                 print((f'ignoring the previous git error for {repo_root}.'
@@ -83,6 +88,7 @@ class MetaWriter():
                     assert not repo.head.commit.diff(None), \
                         (f"check_clean is set to True for {repo.common_dir} "
                          "but the status is not clean")
+                assert repo.working_dir is not None
                 self.git_info[Path(repo.working_dir).stem] = {
                     'repo_dir': repo.working_dir,
                     'commit': repo.commit().name_rev,
@@ -123,8 +129,8 @@ class MetaWriter():
             f.write(self.requirements)
 
         for repo_name, repo_data in self.git_info.items():
-            commit = repo_data['commit']
-            commit_only = commit.split(" ")[0]
+            commit = str(repo_data['commit'])
+            commit_only = commit.split(" ", maxsplit=1)[0]
             repo_dir = repo_data['repo_dir']
 
             meta_repo_dir = meta_dir / repo_name
@@ -145,7 +151,7 @@ class MetaWriter():
             if repo_data['diff']:
                 diff_file = meta_repo_dir / (repo_name + '_diff.diff')
                 with open(diff_file, 'w', encoding='UTF-8') as f:
-                    f.write(repo_data['diff'])
+                    f.write(str(repo_data['diff']))
                 code.append(
                     (f"sp.call(['git', 'apply', '{diff_file.resolve()}'], "
                      "cwd=repo_dir)"))

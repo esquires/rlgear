@@ -1,4 +1,4 @@
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 
 MAINTAINER Eric Squires
 
@@ -10,7 +10,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # create venv
-RUN python3.6 -m venv ~/venvs/rlgear
+RUN python3 -m venv ~/venvs/rlgear
 RUN source ~/venvs/rlgear/bin/activate && \
   pip install -U wheel pip setuptools && \
   rm -rf ~/.cache/pip
@@ -23,6 +23,12 @@ RUN source ~/venvs/rlgear/bin/activate && \
   pip install -U torch torchvision numpy grpcio && \
   rm -rf ~/.cache/pip
 
+# install dependencies in a separate step
+COPY ./setup.py /root/rlgear_deps/setup.py
+RUN mkdir /root/rlgear_deps/rlgear
+RUN source ~/venvs/rlgear/bin/activate && pip install /root/rlgear_deps
+
+RUN source ~/venvs/rlgear/bin/activate && python --version
 COPY ./ /root/rlgear
 WORKDIR /root/rlgear
 RUN source ~/venvs/rlgear/bin/activate && \

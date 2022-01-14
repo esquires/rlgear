@@ -1,5 +1,6 @@
 import functools
-from typing import Dict, Sequence, Union, Any, Iterable, List, Tuple, Optional
+from typing import \
+    Dict, Sequence, Union, Any, Iterable, List, Tuple, Optional, Type
 
 import numpy as np
 import gym
@@ -12,7 +13,6 @@ from ray.rllib.models.modelv2 import ModelV2
 from ray.rllib.utils.annotations import override
 from ray.rllib.models.torch.misc import same_padding
 from ray.rllib.policy.rnn_sequencing import add_time_dimension
-from ray.rllib.policy.view_requirement import ViewRequirement
 
 
 def xavier_init(m: nn.Module) -> None:
@@ -28,15 +28,29 @@ def init_modules(modules: Iterable[nn.Module]) -> None:
         xavier_init(m)
 
 
-def make_fc_layers(sizes: Sequence[int]) -> List[nn.Module]:
+def make_fc_layers(sizes: Sequence[int], dropout_pct: float) \
+        -> List[nn.Module]:
     layers: List[nn.Module] = []
     for inp_size, out_size in zip(sizes[:-1], sizes[1:]):
         layers.append(nn.Linear(inp_size, out_size))
+        if dropout_pct > 0:
+            layers.append(nn.Dropout(p=dropout_pct))
         layers.append(nn.ReLU())
     return layers
 
 
-IntOrSeq = Union[int, Sequence]
+def state_helper(module: nn.Module, lstm_cell_size: int) -> List[torch.Tensor]:
+    # https://github.com/ray-project/ray/blob/master/rllib/examples/models/rnn_model.py
+    # make hidden states on same device as model
+    new = module.weight.new  # type: ignore
+    h = [
+        new(1, lstm_cell_size).zero_().squeeze(0),  # type: ignore
+        new(1, lstm_cell_size).zero_().squeeze(0),  # type: ignore
+    ]
+    return h
+
+
+IntOrSeq = Union[int, Sequence, np.ndarray]
 
 # this is declared because often we want to allow Union input but this
 # is generally a bad idea
@@ -112,44 +126,23 @@ class TorchModel(TorchModelV2, nn.Module):
         assert self._cur_value is not None, "must call forward() first"
         return self._cur_value
 
-    def _declare_states(self, sizes: Sequence[int]) -> None:
-        # see rllib/examples/models/rnn_model.py
-        req = self.inference_view_requirements
-        for i, size in enumerate(sizes):
-            space = gym.spaces.Box(-1.0, 1.0, shape=(size,))
-            req[f"state_in_{i}"] = ViewRequirement(  # type: ignore
-                f"state_out_{i}", shift=-1, space=space)
-
-    # pylint: disable=no-self-use
-    def _state_helper(
-            self, module: nn.Module, lstm_cell_size: int) \
-            -> List[torch.Tensor]:
-        # https://github.com/ray-project/ray/blob/master/rllib/examples/models/rnn_model.py
-        # make hidden states on same device as model
-        new = module.weight.new  # type: ignore
-        h = [
-            new(1, lstm_cell_size).zero_().squeeze(0),  # type: ignore
-            new(1, lstm_cell_size).zero_().squeeze(0),  # type: ignore
-        ]
-        return h
-
 
 # pylint: disable=too-many-instance-attributes
 class FCNet(TorchModel):
-    """Same as torch/fcnet.py in rllib but does not share pi/value layers."""
 
     def __init__(
             self, obs_space: gym.Space, action_space: gym.Space,
-            num_outputs: int, model_config: dict, name: str):
+            num_outputs: int, model_config: dict, name: str, lstm: bool,
+            dropout_pct: float):
         super().__init__(
             obs_space, action_space, num_outputs, model_config, name)
 
         num_inp = np.product(obs_space.shape)
-        sizes = [num_inp] + model_config['fcnet_hiddens']
+        hiddens = model_config['fcnet_hiddens']
 
-        self.pi_network = nn.Sequential(*make_fc_layers(sizes))  # type: ignore
-        self.v_network = nn.Sequential(*make_fc_layers(sizes))  # type: ignore
-        self._make_linear_head(model_config['fcnet_hiddens'][-1])
+        cls = get_network_class(lstm)
+        self.pi_network = cls(num_inp, num_outputs, hiddens, dropout_pct)
+        self.v_network = cls(num_inp, 1, hiddens, dropout_pct)
         init_modules([self.pi_network, self.v_network])
 
     # pylint: disable=unused-argument
@@ -160,14 +153,25 @@ class FCNet(TorchModel):
             state: List[torch.Tensor],
             seq_lens: torch.Tensor) -> Tuple[torch.Tensor, List[torch.Tensor]]:
 
-        self.pi_emb = self.pi_network(input_dict['obs'])
-        self.v_emb = self.v_network(input_dict['obs'])
-        return self._forward_helper(self.pi_emb, self.v_emb), state
+        logits, pi_state_out = self.pi_network(
+            input_dict['obs'], state[:2], seq_lens, self.time_major)
+        values, v_state_out = self.v_network(
+            input_dict['obs'], state[2:], seq_lens, self.time_major)
+
+        self._last_output = logits
+        self._cur_value = values.squeeze(1)
+
+        return logits, pi_state_out + v_state_out
 
     @override(TorchModelV2)
     def value_function(self) -> torch.Tensor:
         assert self._cur_value is not None, "must call forward() first"
         return self._cur_value
+
+    @override(ModelV2)
+    def get_initial_state(self) -> List[torch.Tensor]:
+        return self.pi_network.get_initial_state() + \
+            self.v_network.get_initial_state()
 
 
 # pylint: disable=abstract-method
@@ -246,7 +250,7 @@ class TorchDQNLSTMModel(TorchModel):
 
     @override(ModelV2)
     def get_initial_state(self) -> List[torch.Tensor]:
-        return self._state_helper(self.cnn[-2], self.lstm_cell_size)
+        return state_helper(self.cnn[-2], self.lstm_cell_size)
 
 
 class TorchImpalaModel(TorchModel):
@@ -350,3 +354,92 @@ class TorchImpalaModel(TorchModel):
 
         out_sizes = out_shp + (channels[-1],)
         return convs, res_blocks, out_sizes
+
+
+class MLPNet(nn.Module):
+    def __init__(
+            self, num_inp: int, num_out: int, hiddens: List[int],
+            dropout_pct: float):
+        super().__init__()
+
+        assert hiddens
+
+        self.trunk = nn.Sequential(
+            *make_fc_layers([num_inp] + hiddens, dropout_pct))
+        self.head = nn.Linear(hiddens[-1], num_out)
+
+    # pylint: disable=unused-argument
+    def forward(
+            self,
+            x: torch.Tensor,
+            state: List[torch.Tensor],
+            seq_lens: torch.Tensor,
+            time_major: bool) -> Tuple[torch.Tensor, list]:
+
+        self.emb = self.trunk(x)
+        return self.head(self.emb), []
+
+    # pylint: disable=no-self-use
+    def get_initial_state(self) -> List[torch.Tensor]:
+        return []
+
+
+class LSTMNet(nn.Module):
+    def __init__(
+            self, num_inp: int, num_out: int, hiddens: List[int],
+            dropout_pct: float):
+        super().__init__()
+
+        assert len(hiddens) > 1
+
+        self.mlp = nn.Sequential(
+            *make_fc_layers([num_inp] + hiddens[:-1], dropout_pct))
+        self.lstm = nn.LSTM(hiddens[-2], hiddens[-1], batch_first=True)
+
+        self.dropout_pct = dropout_pct
+        if self.dropout_pct > 0:
+            self.lstm_dropout = nn.Dropout(p=self.dropout_pct)
+
+        self.linear = nn.Linear(hiddens[-1], num_out)
+
+        self.lstm_size = hiddens[-1]
+
+    def forward(
+            self,
+            x: torch.Tensor,
+            state: List[torch.Tensor],
+            seq_lens: torch.Tensor,
+            time_major: bool) -> Tuple[torch.Tensor, list]:
+
+        batch_size = x.shape[0]
+        max_seq_len = x.shape[0] // seq_lens.shape[0]
+        state = [s.view(1, s.shape[0], s.shape[1]) for s in state]
+
+        self.mlp_emb = self.mlp(x)
+
+        # run through lstm
+        x_time = add_time_dimension(
+            self.mlp_emb, max_seq_len=max_seq_len, framework="torch",
+            time_major=time_major)
+        self.lstm_emb, state_out = self.lstm(x_time, state)
+
+        try:
+            self.lstm_emb = self.lstm_emb.view(batch_size, -1)
+        except RuntimeError:
+            # pylint: disable=no-member
+            self.lstm_emb = torch.reshape(self.lstm_emb, [batch_size, -1])
+
+        if self.dropout_pct > 0:
+            self.lstm_emb = self.lstm_dropout(self.lstm_emb)
+
+        logits = self.linear(self.lstm_emb)
+
+        state_out = [s.view([s.shape[1], s.shape[2]]) for s in state_out]
+        return logits, state_out
+
+    def get_initial_state(self) -> List[torch.Tensor]:
+        return state_helper(self.mlp[-2], self.lstm_size)
+
+
+def get_network_class(lstm: bool) -> Union[Type[MLPNet], Type[LSTMNet]]:
+    return LSTMNet if lstm else MLPNet

@@ -120,10 +120,21 @@ def make_basic_rllib_config(
         kwargs['config']['callbacks'] = \
             ['rlgear.rllib_utils.InfoToCustomMetricsCallback']
 
-    cb_classes = \
-        [import_class(cls_str) for cls_str in kwargs['config']['callbacks']]
-    kwargs['config']['callbacks'] = \
-        make_callbacks(cb_classes) if len(cb_classes) > 1 else cb_classes[0]
+    cb_classes = []
+    for cls_str in kwargs['config']['callbacks']:
+        cls = import_class(cls_str)
+
+        if cls is None:
+            # this can happen for instance if a factory function forgets to
+            # return the generated class
+            raise ImportError(f'importing {cls_str} returned None')
+
+        cb_classes.append(cls)
+
+    if len(cb_classes) > 1:
+        kwargs['config']['callbacks'] = make_callbacks(cb_classes)
+    elif len(cb_classes) == 1:
+        kwargs['config']['callbacks'] = cb_classes[0]
 
     return params, kwargs, meta_writer
 

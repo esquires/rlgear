@@ -28,15 +28,21 @@ def init_modules(modules: Iterable[nn.Module]) -> None:
         xavier_init(m)
 
 
-def make_fc_layers(sizes: Sequence[int], dropout_pct: float) \
+def make_fc_layers(
+        sizes: Sequence[int], dropout_pct: float, act_cls: Type[nn.Module]) \
         -> List[nn.Module]:
     layers: List[nn.Module] = []
     for inp_size, out_size in zip(sizes[:-1], sizes[1:]):
         layers.append(nn.Linear(inp_size, out_size))
         if dropout_pct > 0:
             layers.append(nn.Dropout(p=dropout_pct))
-        layers.append(nn.ReLU())
+        layers.append(act_cls())
     return layers
+
+
+def make_box(sz: int) -> gym.spaces.Box:
+    lim = np.inf * np.ones(sz, dtype=np.float32)
+    return gym.spaces.Box(-lim, lim)
 
 
 def state_helper(module: nn.Module, lstm_cell_size: int) -> List[torch.Tensor]:
@@ -133,7 +139,7 @@ class FCNet(TorchModel):
     def __init__(
             self, obs_space: gym.Space, action_space: gym.Space,
             num_outputs: int, model_config: dict, name: str, lstm: bool,
-            dropout_pct: float):
+            dropout_pct: float, act_cls: Any):
         super().__init__(
             obs_space, action_space, num_outputs, model_config, name)
 
@@ -141,8 +147,9 @@ class FCNet(TorchModel):
         hiddens = model_config['fcnet_hiddens']
 
         cls = get_network_class(lstm)
-        self.pi_network = cls(num_inp, num_outputs, hiddens, dropout_pct)
-        self.v_network = cls(num_inp, 1, hiddens, dropout_pct)
+        self.pi_network = \
+            cls(num_inp, num_outputs, hiddens, dropout_pct, act_cls)
+        self.v_network = cls(num_inp, 1, hiddens, dropout_pct, act_cls)
         init_modules([self.pi_network, self.v_network])
 
     # pylint: disable=unused-argument
@@ -154,9 +161,9 @@ class FCNet(TorchModel):
             seq_lens: torch.Tensor) -> Tuple[torch.Tensor, List[torch.Tensor]]:
 
         logits, pi_state_out = self.pi_network(
-            input_dict['obs'], state[:2], seq_lens, self.time_major)
+            input_dict['obs'].float(), state[:2], seq_lens, self.time_major)
         values, v_state_out = self.v_network(
-            input_dict['obs'], state[2:], seq_lens, self.time_major)
+            input_dict['obs'].float(), state[2:], seq_lens, self.time_major)
 
         self._last_output = logits
         self._cur_value = values.squeeze(1)
@@ -196,9 +203,10 @@ class TorchDQNModel(TorchModel):
             state: List[torch.Tensor],
             seq_lens: torch.Tensor) -> Tuple[torch.Tensor, List[torch.Tensor]]:
         x = input_dict['obs'].float().permute(0, 3, 1, 2) / 255.0
-        x = self.cnn(x)
-        x = self.fc(x.reshape(x.size(0), -1))
-        return self._forward_helper(x), state
+        self.emb_cnn = self.cnn(x)
+        self.emb_cnn_flat = self.emb_cnn.reshape(self.emb_cnn.size(0), -1)
+        self.emb_fc = self.fc(self.emb_cnn_flat)
+        return self._forward_helper(self.emb_fc), state
 
 
 class TorchDQNLSTMModel(TorchModel):
@@ -359,14 +367,15 @@ class TorchImpalaModel(TorchModel):
 class MLPNet(nn.Module):
     def __init__(
             self, num_inp: int, num_out: int, hiddens: List[int],
-            dropout_pct: float):
+            dropout_pct: float, act_cls: Type[nn.Module]):
         super().__init__()
 
         assert hiddens
 
         self.trunk = nn.Sequential(
-            *make_fc_layers([num_inp] + hiddens, dropout_pct))
+            *make_fc_layers([num_inp] + hiddens, dropout_pct, act_cls))
         self.head = nn.Linear(hiddens[-1], num_out)
+        init_modules([self.trunk, self.head])
 
     # pylint: disable=unused-argument
     def forward(
@@ -387,21 +396,23 @@ class MLPNet(nn.Module):
 class LSTMNet(nn.Module):
     def __init__(
             self, num_inp: int, num_out: int, hiddens: List[int],
-            dropout_pct: float):
+            dropout_pct: float, act_cls: Type[nn.Module]):
         super().__init__()
 
         assert len(hiddens) > 1
 
         self.mlp = nn.Sequential(
-            *make_fc_layers([num_inp] + hiddens[:-1], dropout_pct))
+            *make_fc_layers([num_inp] + hiddens[:-1], dropout_pct, act_cls))
         self.lstm = nn.LSTM(hiddens[-2], hiddens[-1], batch_first=True)
 
         self.dropout_pct = dropout_pct
         if self.dropout_pct > 0:
             self.lstm_dropout = nn.Dropout(p=self.dropout_pct)
+            init_modules([self.lstm_dropout])
 
         self.linear = nn.Linear(hiddens[-1], num_out)
 
+        init_modules([self.mlp, self.lstm, self.linear])
         self.lstm_size = hiddens[-1]
 
     def forward(
@@ -439,6 +450,19 @@ class LSTMNet(nn.Module):
 
     def get_initial_state(self) -> List[torch.Tensor]:
         return state_helper(self.mlp[-2], self.lstm_size)
+
+
+def distribute_state(networks: list, state: list) -> List[list]:
+    out = []
+    idx = 0
+    for network in networks:
+        if isinstance(network, LSTMNet):
+            out.append(state[idx:idx + 2])
+            idx += 2
+        else:
+            out.append([])
+
+    return out
 
 
 def get_network_class(lstm: bool) -> Union[Type[MLPNet], Type[LSTMNet]]:

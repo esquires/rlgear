@@ -399,11 +399,15 @@ class LSTMNet(nn.Module):
             dropout_pct: float, act_cls: Type[nn.Module]):
         super().__init__()
 
-        assert len(hiddens) > 1
-
-        self.mlp = nn.Sequential(
-            *make_fc_layers([num_inp] + hiddens[:-1], dropout_pct, act_cls))
-        self.lstm = nn.LSTM(hiddens[-2], hiddens[-1], batch_first=True)
+        if len(hiddens) == 1:
+            self.mlp = None
+            self.lstm = nn.LSTM(num_inp, hiddens[-1], batch_first=True)
+            init_modules([self.lstm])
+        else:
+            self.mlp = nn.Sequential(*make_fc_layers(
+                [num_inp] + hiddens[:-1], dropout_pct, act_cls))
+            self.lstm = nn.LSTM(hiddens[-2], hiddens[-1], batch_first=True)
+            init_modules([self.mlp, self.lstm])
 
         self.dropout_pct = dropout_pct
         if self.dropout_pct > 0:
@@ -411,8 +415,7 @@ class LSTMNet(nn.Module):
             init_modules([self.lstm_dropout])
 
         self.linear = nn.Linear(hiddens[-1], num_out)
-
-        init_modules([self.mlp, self.lstm, self.linear])
+        init_modules([self.linear])
         self.lstm_size = hiddens[-1]
 
     def forward(
@@ -426,11 +429,15 @@ class LSTMNet(nn.Module):
         max_seq_len = x.shape[0] // seq_lens.shape[0]
         state = [s.view(1, s.shape[0], s.shape[1]) for s in state]
 
-        self.mlp_emb = self.mlp(x)
+        if self.mlp is not None:
+            self.mlp_emb = self.mlp(x)
+            x = self.mlp_emb
+        else:
+            self.mlp_emb = None
 
         # run through lstm
         x_time = add_time_dimension(
-            self.mlp_emb, max_seq_len=max_seq_len, framework="torch",
+            x, max_seq_len=max_seq_len, framework="torch",
             time_major=time_major)
         self.lstm_emb, state_out = self.lstm(x_time, state)
 
@@ -449,7 +456,16 @@ class LSTMNet(nn.Module):
         return logits, state_out
 
     def get_initial_state(self) -> List[torch.Tensor]:
-        return state_helper(self.mlp[-2], self.lstm_size)
+        if self.mlp is not None:
+            return state_helper(self.mlp[-2], self.lstm_size)
+        else:
+            modules = list(self.lstm.modules())[0]
+            hh = modules.weight_hh_l0
+            ih = modules.weight_ih_l0
+            return [
+                hh.new(1, self.lstm_size).zero_().squeeze(0),  # type: ignore
+                ih.new(1, self.lstm_size).zero_().squeeze(0)  # type: ignore
+            ]
 
 
 def distribute_state(networks: list, state: list) -> List[list]:

@@ -420,6 +420,7 @@ def plot_progress(
         xtick_interval: Optional[float] = None) -> None:
 
     for name, df in zip(names, dfs):
+        df = df[~np.isnan(df.mean(axis=1))]
         ax.plot(df.index, df.mean(axis=1), label=name)
 
         if percentiles:

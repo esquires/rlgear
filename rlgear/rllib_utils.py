@@ -110,6 +110,7 @@ def make_basic_rllib_config(
         kwargs['local_dir'] = os.path.join(kwargs['local_dir'], 'debug')
         kwargs['config']['num_workers'] = 0
         kwargs['config']['num_gpus'] = 0
+        kwargs['num_samples'] = 1
         if kwargs['verbose'] == 0:
             kwargs['verbose'] = 1
         if kwargs['config']['log_level'] in ['ERROR', 'WARN']:

@@ -148,6 +148,12 @@ class InfoToCustomMetricsCallback(DefaultCallbacks):
             **__) -> None:
         key = list(episode._agent_to_last_info.keys())[0]
         ep_info = episode.last_info_for(key).copy()
+
+        # handle the case where the agents are a group
+        # see ray.rllib.env.multi_agent_env.with_agent_groups
+        if '_group_info' in ep_info:
+            ep_info = ep_info['_group_info'][0]
+
         episode.custom_metrics.update(ray.tune.utils.flatten_dict(ep_info))
 
 

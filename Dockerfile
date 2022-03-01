@@ -31,7 +31,9 @@ RUN source ~/venvs/rlgear/bin/activate && pip install /root/rlgear_deps
 RUN source ~/venvs/rlgear/bin/activate && python --version
 COPY ./ /root/rlgear
 WORKDIR /root/rlgear
+
 RUN source ~/venvs/rlgear/bin/activate && \
+  pip install pygame && \
   pip install . && \
   rm -rf ~/.cache/pip
 

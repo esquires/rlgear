@@ -13,13 +13,53 @@ from typing import Iterable, List, Union, Dict, Tuple, Optional, Sequence, \
 import numpy as np
 import pandas as pd
 
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mtick
 import yaml
 import git
 
-
 import tqdm
+
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib.ticker as mtick
+except ImportError:
+    import warnings
+    warnings.warn(
+        'matplotlib not found, not defining plot_percentiles or plot_progress')
+
+else:
+    def plot_percentiles(
+            ax: plt.axis, df: pd.DataFrame, percentiles: Tuple[float, float],
+            alpha: float) -> None:
+
+        assert 0 <= alpha <= 1
+
+        assert len(percentiles) == 2 and \
+            0 <= percentiles[0] <= 1 and \
+            0 <= percentiles[1] <= 1, "percentiles must be between 0 and 1"
+
+        pct_low = df.quantile(percentiles[0], axis=1)
+        pct_high = df.quantile(percentiles[1], axis=1)
+        ax.fill_between(df.index, pct_low, pct_high, alpha=alpha)
+
+    # pylint: disable=too-many-arguments
+    def plot_progress(
+            ax: plt.axis,
+            dfs: List[pd.DataFrame],
+            names: Iterable[str],
+            percentiles: Optional[Tuple[float, float]] = None,
+            alpha: float = 0.1,
+            xtick_interval: Optional[float] = None) -> None:
+
+        for name, df in zip(names, dfs):
+            df = df[~np.isnan(df.mean(axis=1))]
+            ax.plot(df.index, df.mean(axis=1), label=name)
+
+            if percentiles:
+                plot_percentiles(ax, df, percentiles, alpha)
+
+        if xtick_interval:
+            ax.xaxis.set_major_locator(mtick.MultipleLocator(xtick_interval))
+
 
 StrOrPath = Union[str, Path]
 GymObsRewDoneInfo = Tuple[np.ndarray, float, bool, dict]
@@ -338,21 +378,6 @@ def preprocess_pbt_df(df: pd.DataFrame, x_tag: str) -> pd.DataFrame:
     return df
 
 
-def plot_percentiles(
-        ax: plt.axis, df: pd.DataFrame, percentiles: Tuple[float, float],
-        alpha: float) -> None:
-
-    assert 0 <= alpha <= 1
-
-    assert len(percentiles) == 2 and \
-        0 <= percentiles[0] <= 1 and \
-        0 <= percentiles[1] <= 1, "percentiles must be between 0 and 1"
-
-    pct_low = df.quantile(percentiles[0], axis=1)
-    pct_high = df.quantile(percentiles[1], axis=1)
-    ax.fill_between(df.index, pct_low, pct_high, alpha=alpha)
-
-
 # pylint: disable=too-many-locals,too-many-branches,too-many-arguments
 def get_progress(
         base_dirs: Iterable[StrOrPath],
@@ -409,25 +434,6 @@ def get_progress(
         shorten_dfs(out_dfs, max_step)
 
     return out_dfs
-
-
-def plot_progress(
-        ax: plt.axis,
-        dfs: List[pd.DataFrame],
-        names: Iterable[str],
-        percentiles: Optional[Tuple[float, float]] = None,
-        alpha: float = 0.1,
-        xtick_interval: Optional[float] = None) -> None:
-
-    for name, df in zip(names, dfs):
-        df = df[~np.isnan(df.mean(axis=1))]
-        ax.plot(df.index, df.mean(axis=1), label=name)
-
-        if percentiles:
-            plot_percentiles(ax, df, percentiles, alpha)
-
-    if xtick_interval:
-        ax.xaxis.set_major_locator(mtick.MultipleLocator(xtick_interval))
 
 
 def import_class(class_info: Union[str, dict]) -> Any:

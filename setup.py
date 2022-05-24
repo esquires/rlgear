@@ -13,7 +13,7 @@ setup(
         "tabulate",
         "pandas",
         "matplotlib",
-        "gym",
+        "gym==0.21.0",
         "dataclasses",
         # ray packages
         "ray>=1.6.0",

@@ -27,6 +27,7 @@ def make_dummy_env(
         observation_space = ob_space
         action_space = ac_space
 
+        # pylint: disable=super-init-not-called
         def __init__(self, env_config: dict):
             pass
 

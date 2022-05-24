@@ -14,7 +14,6 @@ import numpy as np
 import pandas as pd
 
 import yaml
-import git
 
 import tqdm
 
@@ -105,34 +104,41 @@ class MetaWriter():
         self.cmd = " ".join(sys.argv)
 
         self.git_info = {}
-        for repo_root, check in zip(roots, check_clean):
-            # avoids mypy error:
-            # Trying to read deleted variable "exc"
-            git_exc: Any = git.exc  # type: ignore
-            try:
-                repo = git.Repo(repo_root,
-                                search_parent_directories=True)
-                diff = sp.check_output(
-                    ['git', 'diff'],
-                    cwd=repo.working_dir).decode(encoding='UTF-8')
+        try:
+            # pylint: disable=import-outside-toplevel
+            import git
+        except ImportError:
+            pass
+        else:
 
-            # pylint: disable=no-member
-            except (git_exc.InvalidGitRepositoryError,
-                    git_exc.NoSuchPathError,
-                    sp.CalledProcessError) as e:
-                print(e)
-                print((f'ignoring the previous git error for {repo_root}.'
-                       'This git repo will not be saved.'))
-            else:
-                if check:
-                    assert not repo.head.commit.diff(None), \
-                        (f"check_clean is set to True for {repo.common_dir} "
-                         "but the status is not clean")
-                assert repo.working_dir is not None
-                self.git_info[Path(repo.working_dir).stem] = {
-                    'repo_dir': repo.working_dir,
-                    'commit': repo.commit().name_rev,
-                    'diff': diff}
+            for repo_root, check in zip(roots, check_clean):
+                # avoids mypy error:
+                # Trying to read deleted variable "exc"
+                git_exc: Any = git.exc  # type: ignore
+                try:
+                    repo = git.Repo(repo_root,
+                                    search_parent_directories=True)
+                    diff = sp.check_output(
+                        ['git', 'diff'],
+                        cwd=repo.working_dir).decode(encoding='UTF-8')
+
+                # pylint: disable=no-member
+                except (git_exc.InvalidGitRepositoryError,
+                        git_exc.NoSuchPathError,
+                        sp.CalledProcessError) as e:
+                    print(e)
+                    print((f'ignoring the previous git error for {repo_root}.'
+                           'This git repo will not be saved.'))
+                else:
+                    if check:
+                        assert not repo.head.commit.diff(None), \
+                            ("check_clean is set to True for "
+                             f"{repo.common_dir} but the status is not clean")
+                    assert repo.working_dir is not None
+                    self.git_info[Path(repo.working_dir).stem] = {
+                        'repo_dir': repo.working_dir,
+                        'commit': repo.commit().name_rev,
+                        'diff': diff}
 
     # pylint: disable=too-many-locals
     def write(self, logdir: str) -> None:

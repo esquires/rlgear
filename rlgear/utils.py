@@ -259,17 +259,19 @@ def get_inputs(
     return inputs
 
 
-def parse_inputs(inputs: Iterable[StrOrPath]) -> dict:
-    # note that importing ray.tune does not override tf.executing_eagerly
-    # pylint: disable=import-outside-toplevel
-    from ray.tune.utils import merge_dicts
+def parse_inputs(inputs: Sequence[StrOrPath]) -> dict:
 
     out: dict = {}
     for inp in inputs:
         with open(inp, 'r', encoding='UTF-8') as f:
             params = yaml.safe_load(f)
 
-        out = merge_dicts(out, params)
+        if out:
+            # pylint: disable=import-outside-toplevel
+            from ray.tune.utils import merge_dicts
+            out = merge_dicts(out, params)
+        else:
+            out = params
 
     try:
         del out['__inputs__']

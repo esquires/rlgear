@@ -1,11 +1,21 @@
-import rlgear.agents
 import rlgear.utils
-import rlgear.rllib_utils
+
 try:
-    import torch  # NOQA
-    # pylint: disable=ungrouped-imports
-    import rlgear.models  # NOQA
+    import ray  # NOQA
 except ImportError as e:
     import warnings
-    warnings.warn("could not import torch, skipping rlgear.models")
+    warnings.warn((
+        "could not import ray, skipping rlgear.models, rllib_utils, "
+        "and models"))
     print(e)
+else:
+    # pylint: disable=ungrouped-imports
+    import rlgear.agents
+    import rlgear.rllib_utils  # NOQA
+
+    try:
+        import torch  # NOQA
+    except ImportError as e:
+        import warnings
+        warnings.warn("could not import torch, skipping rlgear.models")
+        print(e)

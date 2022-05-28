@@ -12,10 +12,10 @@ else:
     # pylint: disable=ungrouped-imports
     import rlgear.agents
     import rlgear.rllib_utils  # NOQA
-    import rlgear.models  # NOQA
 
     try:
         import torch  # NOQA
+        import rlgear.models  # NOQA
     except ImportError as e:
         import warnings
         warnings.warn("could not import torch, skipping rlgear.models")

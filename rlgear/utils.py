@@ -152,7 +152,11 @@ class MetaWriter():
                 link_tgt.unlink()
             except FileNotFoundError:
                 pass
-            link_tgt.symlink_to(logdir, target_is_directory=True)
+
+            try:
+                link_tgt.symlink_to(logdir, target_is_directory=True)
+            except FileExistsError:
+                pass
 
         meta_dir = Path(logdir) / 'meta'
         meta_dir.mkdir(exist_ok=True)

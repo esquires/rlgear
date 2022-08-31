@@ -1,60 +1,24 @@
 import argparse
-import re
 import os
 import string
 import random
-import time
 from pathlib import Path
-from typing import Tuple, Any, Iterable, Union, Dict, List, Type
+from typing import Tuple, Any, Iterable, Union, Dict
 
 import yaml
 import ray
 import ray.tune.utils
-from ray.rllib.evaluation import MultiAgentEpisode
-from ray.rllib.agents.callbacks import DefaultCallbacks
 
 from .utils import MetaWriter, get_inputs, parse_inputs, get_log_dir, \
     StrOrPath, dict_str2num, import_class
 
 
-def make_rllib_metadata_logger(meta_data_writer: MetaWriter) \
-        -> Type[ray.tune.logger.Logger]:
-    class RllibLogMetaData(ray.tune.logger.Logger):
-        def _init(self) -> None:
-            self.meta_data_writer = meta_data_writer
-            meta_data_writer.write(self.logdir)
+class MetaLoggerCallback(ray.tune.logger.LoggerCallback):
+    def __init__(self, meta_writer: MetaWriter):
+        self.meta_writer = meta_writer
 
-        def on_result(self, _: dict) -> None:
-            pass
-
-    return RllibLogMetaData
-
-
-def make_filtered_tblogger(
-        regex_filters: List[str],
-        time_elapsed: float = 0,
-        train_iters: int = 0) -> Type[ray.tune.logger.TBXLogger]:
-    class FilteredTbLogger(ray.tune.logger.TBXLogger):
-        def _init(self) -> None:
-            super()._init()
-            self.last_time = time.perf_counter() - 1 - time_elapsed
-            self.last_train_iter = -1 - train_iters
-
-        def on_result(self, result: dict) -> None:
-            t = time.perf_counter()
-            training_iter = result['training_iteration']
-            if (t - self.last_time < time_elapsed or
-                    training_iter - self.last_train_iter < train_iters):
-                return
-
-            self.last_time = t
-            self.last_train_iter = training_iter
-            result['custom_metrics'] = \
-                {k: v for k, v in result['custom_metrics'].items()
-                 if not any([re.search(r, k) for r in regex_filters])}
-            super().on_result(result)
-
-    return FilteredTbLogger
+    def log_trial_start(self, trial: ray.tune.experiment.trial.Trial) -> None:
+        self.meta_writer.write(trial.logdir)
 
 
 def add_rlgear_args(parser: argparse.ArgumentParser) \
@@ -67,12 +31,12 @@ def add_rlgear_args(parser: argparse.ArgumentParser) \
 
 
 def make_basic_rllib_config(
-        yaml_file: StrOrPath,
-        exp_name: str,
-        search_dirs: Union[StrOrPath, Iterable[StrOrPath]],
-        debug: bool,
-        overrides: dict) \
-        -> Tuple[Dict[str, Any], Dict[str, Any], MetaWriter]:
+    yaml_file: StrOrPath,
+    exp_name: str,
+    search_dirs: Union[StrOrPath, Iterable[StrOrPath]],
+    debug: bool,
+    overrides: dict
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     inputs = get_inputs(yaml_file, search_dirs)
     params = dict_str2num(parse_inputs(inputs))
@@ -80,19 +44,12 @@ def make_basic_rllib_config(
     if overrides is not None:
         params = ray.tune.utils.merge_dicts(params, overrides)
 
-    loggers = list(ray.tune.logger.DEFAULT_LOGGERS)
-
+    # loggers = list(ray.tune.logger.DEFAULT_LOGGERS)
     meta_writer = MetaWriter(
         repo_roots=[Path.cwd()] + params['git_repos']['paths'],
         files=inputs,
         str_data={'merged_params.yaml': yaml.dump(params)},
         check_clean=params['git_repos']['check_clean'])
-    loggers.append(make_rllib_metadata_logger(meta_writer))
-
-    if 'tb_filter' in params['log']:
-        loggers = \
-            [l for l in loggers if l is not ray.tune.logger.TBXLogger]  # NOQA
-        loggers.append(make_filtered_tblogger(**params['log']['tb_filter']))
 
     # provide defaults that can be overriden in the yaml file
     kwargs: dict = {
@@ -100,7 +57,7 @@ def make_basic_rllib_config(
             "log_level": "INFO",
         },
         'local_dir': str(get_log_dir(params['log'], yaml_file, exp_name)),
-        'loggers': loggers
+        # 'loggers': loggers
     }
 
     for blk in params['rllib']['tune_kwargs_blocks'].split(','):
@@ -116,86 +73,16 @@ def make_basic_rllib_config(
         if kwargs['config']['log_level'] in ['ERROR', 'WARN']:
             kwargs['config']['log_level'] = 'INFO'
 
-    if 'callbacks' not in kwargs['config'] \
-            or not kwargs['config']['callbacks']:
-        kwargs['config']['callbacks'] = \
-            ['rlgear.rllib_utils.InfoToCustomMetricsCallback']
+    if 'callbacks' not in kwargs:
+        kwargs['callbacks'] = []
+    else:
+        for i, cb in enumerate(kwargs['callbacks']):
+            if isinstance(cb, dict):
+                kwargs['callbacks'][i] = import_class(kwargs['callbacks'][i])
 
-    cb_classes = []
-    for cls_str in kwargs['config']['callbacks']:
-        cls = import_class(cls_str)
+    kwargs['callbacks'].append(MetaLoggerCallback(meta_writer))
 
-        if cls is None:
-            # this can happen for instance if a factory function forgets to
-            # return the generated class
-            raise ImportError(f'importing {cls_str} returned None')
-
-        cb_classes.append(cls)
-
-    if len(cb_classes) > 1:
-        kwargs['config']['callbacks'] = make_callbacks(cb_classes)
-    elif len(cb_classes) == 1:
-        kwargs['config']['callbacks'] = cb_classes[0]
-
-    return params, kwargs, meta_writer
-
-
-class InfoToCustomMetricsCallback(DefaultCallbacks):
-    # pylint: disable=arguments-differ,no-self-use
-    def on_episode_end(  # type: ignore
-            self, *_,
-            episode: MultiAgentEpisode,
-            **__) -> None:
-        key = list(episode._agent_to_last_info.keys())[0]
-        ep_info = episode.last_info_for(key).copy()
-
-        # handle the case where the agents are a group
-        # see ray.rllib.env.multi_agent_env.with_agent_groups
-        if '_group_info' in ep_info:
-            ep_info = ep_info['_group_info'][0]
-
-        episode.custom_metrics.update(ray.tune.utils.flatten_dict(ep_info))
-
-
-def make_callbacks(callback_classes: Iterable[DefaultCallbacks]) \
-        -> Any:
-    class ListOfCallbacks(DefaultCallbacks):
-
-        # this allows the callback classes to be altered after the
-        # closure has run
-        CALLBACK_CLASSES = callback_classes
-
-        def __init__(self, *args, **kwargs):  # type: ignore
-            super().__init__(*args, **kwargs)
-
-            self.callbacks = \
-                [cb_cls(*args, **kwargs) for cb_cls in self.CALLBACK_CLASSES]
-
-        def on_episode_start(self, *args, **kwargs):  # type: ignore
-            for cb in self.callbacks:
-                cb.on_episode_start(*args, **kwargs)
-
-        def on_episode_step(self, *args, **kwargs):  # type: ignore
-            for cb in self.callbacks:
-                cb.on_episode_step(*args, **kwargs)
-
-        def on_episode_end(self, *args, **kwargs):  # type: ignore
-            for cb in self.callbacks:
-                cb.on_episode_end(*args, **kwargs)
-
-        def on_postprocess_trajectory(self, *args, **kwargs):  # type: ignore
-            for cb in self.callbacks:
-                cb.on_postprocess_trajectory(*args, **kwargs)
-
-        def on_sample_end(self, *args, **kwargs):  # type: ignore
-            for cb in self.callbacks:
-                cb.on_sample_end(*args, **kwargs)
-
-        def on_train_result(self, *args, **kwargs):  # type: ignore
-            for cb in self.callbacks:
-                cb.on_train_result(*args, **kwargs)
-
-    return ListOfCallbacks
+    return params, kwargs
 
 
 def gen_passwd(size: int) -> str:

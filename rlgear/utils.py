@@ -8,7 +8,7 @@ import pprint
 import subprocess as sp
 from pathlib import Path
 from typing import Iterable, List, Union, Dict, Tuple, Optional, Sequence, \
-    Any
+    Any, TypedDict
 
 import numpy as np
 import pandas as pd
@@ -299,29 +299,6 @@ def dict_str2num(d: dict) -> dict:
     return d
 
 
-def dict_import_class(seq: Any) -> Any:
-
-    if isinstance(seq, (list, tuple)):
-        return [dict_import_class(val) for val in seq]
-    elif isinstance(seq, dict):
-
-        d = seq
-        keys = list(d.keys())  # copy
-        tgt_keys = {'cls', 'kwargs', "__dict_import_class"}
-        for k in keys:
-            if hasattr(d[k], '__iter__'):
-                d[k] = dict_import_class(d[k])
-
-                if isinstance(d[k], dict) and \
-                        set(d[k].keys()) == tgt_keys and \
-                        d[k]["__dict_import_class"]:
-                    d[k] = import_class(d[k])
-
-        return d
-    else:
-        return seq
-
-
 def get_latest_checkpoint(ckpt_root_dir: str) -> str:
     ckpts = [str(c) for c in Path(ckpt_root_dir).rglob('*checkpoint-*')
              if 'meta' not in str(c)]
@@ -355,39 +332,9 @@ def shorten_dfs(_dfs: Sequence[pd.DataFrame], max_step: int = None) -> None:
 
     if max_step is None:
         # shortest maximum step among the dfs
-        max_step = min([_df.index.max() for _df in _dfs])
+        max_step = min(_df.index.max() for _df in _dfs)
     for i, _df in enumerate(_dfs):
         _dfs[i] = _df[_df.index <= max_step]  # type: ignore
-
-
-def preprocess_pbt_df(df: pd.DataFrame, x_tag: str) -> pd.DataFrame:
-    """Align the x_tag index used in plot_progress before plotting.
-
-    Args:
-    ----
-        df (pd.DataFrame): Dataframe of the progress.csv file
-        x_tag (str): Desired tag in df to use as index of plot
-
-    Return:
-    ------
-        df (pd.DataFrame): Dataframe with the x_tag column aligned to plot
-
-    """
-    tag_diff = f'{x_tag}_diff'
-    df[tag_diff] = df[x_tag].diff()
-    # find the indexes where overlap starts
-    neg_diff = df.loc[df[tag_diff] < 0].index.to_list()
-    # if no overlap is found return the original dataframe
-    if len(neg_diff) == 0:
-        return df
-    else:
-        for val in neg_diff:
-            start = val
-            end = len(df)
-            # shift x_tag values by the overlapping amount
-            df[x_tag][start:end] += df[tag_diff][start-2] + \
-                abs(df[tag_diff][start])
-    return df
 
 
 # pylint: disable=too-many-locals,too-many-branches,too-many-arguments
@@ -395,7 +342,6 @@ def get_progress(
         base_dirs: Iterable[StrOrPath],
         tag: str,
         x_tag: str = 'timesteps_total',
-        preprocess_pbt: bool = False,
         only_complete_data: bool = False,
         show_same_num_timesteps: bool = False,
         max_step: int = None,
@@ -422,14 +368,12 @@ def get_progress(
         i = 0
         while i < len(dfs):
             try:
-                df = preprocess_pbt_df(dfs[i], x_tag) \
-                    if preprocess_pbt else dfs[i]
-                dfs[i] = df[[x_tag, tag]].set_index(x_tag)
+                dfs[i] = dfs[i][[x_tag, tag]].set_index(x_tag)
                 i += 1
             except KeyError as e:
                 print(e)
                 print(f'Error setting index for {progress_files[i]}')
-                pprint.pprint(f'available keys are {list(df.columns)}')
+                pprint.pprint(f'available keys are {list(dfs[i].columns)}')
                 pprint.pprint('skipping')
                 del dfs[i]
 
@@ -448,7 +392,12 @@ def get_progress(
     return out_dfs
 
 
-def import_class(class_info: Union[str, dict]) -> Any:
+class ImportClassDict(TypedDict):
+    cls: str
+    kwargs: Dict[str, Any]
+
+
+def import_class(class_info: Union[str, ImportClassDict]) -> Any:
     def _get_class(class_str: str) -> Any:
         split = class_str.split('.')
         return getattr(

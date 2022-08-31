@@ -139,7 +139,7 @@ class FCNet(TorchModel):
     def __init__(
             self, obs_space: gym.Space, action_space: gym.Space,
             num_outputs: int, model_config: dict, name: str, lstm: bool,
-            dropout_pct: float, act_cls: Any):
+            dropout_pct: float, act_cls: Type[nn.Module]):
         super().__init__(
             obs_space, action_space, num_outputs, model_config, name)
 
@@ -370,11 +370,14 @@ class MLPNet(nn.Module):
             dropout_pct: float, act_cls: Type[nn.Module]):
         super().__init__()
 
-        assert hiddens
-
         self.trunk = nn.Sequential(
             *make_fc_layers([num_inp] + hiddens, dropout_pct, act_cls))
-        self.head = nn.Linear(hiddens[-1], num_out)
+
+        if hiddens:
+            self.head = nn.Linear(hiddens[-1], num_out)
+        else:
+            self.head = nn.Linear(num_inp, num_out)
+
         init_modules([self.trunk, self.head])
 
     # pylint: disable=unused-argument
@@ -385,8 +388,12 @@ class MLPNet(nn.Module):
             seq_lens: torch.Tensor,
             time_major: bool) -> Tuple[torch.Tensor, list]:
 
-        self.emb = self.trunk(x)
-        return self.head(self.emb), []
+        if bool(self.trunk):
+            self.emb = self.trunk(x)
+        else:
+            self.emb = x
+        self.logits = self.head(self.emb)
+        return self.logits, []
 
     # pylint: disable=no-self-use
     def get_initial_state(self) -> List[torch.Tensor]:
@@ -439,21 +446,21 @@ class LSTMNet(nn.Module):
         x_time = add_time_dimension(
             x, max_seq_len=max_seq_len, framework="torch",
             time_major=time_major)
-        self.lstm_emb, state_out = self.lstm(x_time, state)
+        self.emb, state_out = self.lstm(x_time, state)
 
         try:
-            self.lstm_emb = self.lstm_emb.view(batch_size, -1)
+            self.emb = self.emb.view(batch_size, -1)
         except RuntimeError:
             # pylint: disable=no-member
-            self.lstm_emb = torch.reshape(self.lstm_emb, [batch_size, -1])
+            self.emb = torch.reshape(self.emb, [batch_size, -1])
 
         if self.dropout_pct > 0:
-            self.lstm_emb = self.lstm_dropout(self.lstm_emb)
+            self.emb = self.lstm_dropout(self.emb)
 
-        logits = self.linear(self.lstm_emb)
+        self.logits = self.linear(self.emb)
 
         state_out = [s.view([s.shape[1], s.shape[2]]) for s in state_out]
-        return logits, state_out
+        return self.logits, state_out
 
     def get_initial_state(self) -> List[torch.Tensor]:
         if self.mlp is not None:
@@ -468,8 +475,12 @@ class LSTMNet(nn.Module):
             ]
 
 
-def distribute_state(networks: list, state: list) -> List[list]:
-    out = []
+HelperNet = Union[Type[MLPNet], Type[LSTMNet]]
+
+
+def distribute_state(networks: List[HelperNet], state: List[torch.Tensor]) \
+        -> List[List[torch.Tensor]]:
+    out: List[List[torch.Tensor]] = []
     idx = 0
     for network in networks:
         if isinstance(network, LSTMNet):
@@ -481,5 +492,5 @@ def distribute_state(networks: list, state: list) -> List[list]:
     return out
 
 
-def get_network_class(lstm: bool) -> Union[Type[MLPNet], Type[LSTMNet]]:
+def get_network_class(lstm: bool) -> HelperNet:
     return LSTMNet if lstm else MLPNet

@@ -5,3 +5,5 @@
 **/*.egg-info
 **/*.git
 **/*.pyc
+**/tags
+.dmypy.json

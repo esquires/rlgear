@@ -16,7 +16,7 @@ setup(
         "gym==0.21.0",
         "dataclasses",
         # ray packages
-        "ray>=1.6.0",
+        "ray>=2.0.0",
         # extra rllib dependencies that don't come through automatically
         "crc32c",
         "requests",
@@ -36,8 +36,4 @@ setup(
             "types-PyYAML",
         ],
     },
-    entry_points={
-        'console_scripts':
-            ['copy-trial-data=rlgear.scripts:copy_trial_data'],
-    }
 )

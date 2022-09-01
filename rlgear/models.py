@@ -143,7 +143,7 @@ class FCNet(TorchModel):
         super().__init__(
             obs_space, action_space, num_outputs, model_config, name)
 
-        num_inp = np.product(obs_space.shape)
+        num_inp: int = np.product(obs_space.shape)  # type: ignore
         hiddens = model_config['fcnet_hiddens']
 
         cls = get_network_class(lstm)
@@ -188,7 +188,7 @@ class TorchDQNModel(TorchModel):
             num_outputs: int, model_config: dict, name: str):
         super().__init__(
             obs_space, action_space, num_outputs, model_config, name)
-        cnn_layers, out_shp = dqn_cnn(obs_space.shape)
+        cnn_layers, out_shp = dqn_cnn(obs_space.shape)  # type: ignore
         self.cnn = nn.Sequential(*cnn_layers)
         self.fc = nn.Sequential(
             nn.ReLU(), nn.Linear(int(np.prod(out_shp)), 512), nn.ReLU())
@@ -217,7 +217,7 @@ class TorchDQNLSTMModel(TorchModel):
         super().__init__(obs_space, action_space, num_outputs, model_config,
                          name)
         self.lstm_cell_size = model_config['lstm_cell_size']
-        cnn_layers, out_shp = dqn_cnn(obs_space.shape)
+        cnn_layers, out_shp = dqn_cnn(obs_space.shape)  # type: ignore
         self.cnn = nn.Sequential(*cnn_layers)
         self.lstm = nn.LSTM(
             int(np.prod(out_shp)), self.lstm_cell_size, batch_first=True)
@@ -276,7 +276,7 @@ class TorchImpalaModel(TorchModel):
 
         self.fc_emb_sz = 512
         self.convs, self.res_blocks, self.cnn_emb_sz = \
-            self._cnn(obs_space.shape)
+            self._cnn(obs_space.shape)  # type: ignore
         self.fc = self._fc(int(np.prod(self.cnn_emb_sz)))
         self._make_linear_head(self.fc_emb_sz)
         init_modules([self.convs, self.res_blocks, self.fc,

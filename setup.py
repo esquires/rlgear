@@ -13,7 +13,7 @@ setup(
         "tabulate",
         "pandas",
         "matplotlib",
-        "gym==0.21.0",
+        "gym",
         "dataclasses",
         # ray packages
         "ray>=2.0.0",
@@ -33,7 +33,7 @@ setup(
             "pylint",
             "pydocstyle",
             "mypy",
-            "types-PyYAML",
+            "types-pyyaml"
         ],
     },
 )

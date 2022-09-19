@@ -1,8 +1,8 @@
 import argparse
+import uuid
 import os
 import string
 import random
-from pathlib import Path
 from typing import Tuple, Any, Iterable, Union, Dict
 
 import yaml
@@ -30,12 +30,12 @@ def add_rlgear_args(parser: argparse.ArgumentParser) \
     return parser
 
 
-def make_basic_rllib_config(
+def make_rllib_config(
     yaml_file: StrOrPath,
     exp_name: str,
     search_dirs: Union[StrOrPath, Iterable[StrOrPath]],
     debug: bool,
-    overrides: dict
+    overrides: dict,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     inputs = get_inputs(yaml_file, search_dirs)
@@ -46,10 +46,9 @@ def make_basic_rllib_config(
 
     # loggers = list(ray.tune.logger.DEFAULT_LOGGERS)
     meta_writer = MetaWriter(
-        repo_roots=[Path.cwd()] + params['git_repos']['paths'],
+        repo_roots=params['git_repos'],
         files=inputs,
-        str_data={'merged_params.yaml': yaml.dump(params)},
-        check_clean=params['git_repos']['check_clean'])
+        str_data={'merged_params.yaml': yaml.dump(params)})
 
     # provide defaults that can be overriden in the yaml file
     kwargs: dict = {
@@ -73,6 +72,15 @@ def make_basic_rllib_config(
         if kwargs['config']['log_level'] in ['ERROR', 'WARN']:
             kwargs['config']['log_level'] = 'INFO'
 
+    # handle the rllib logger callbacks. These are more complicated because
+    # they need to be classes, not the objects. For now just handling
+    # the case of a single callback but if needed in the future add support
+    # for callbacks.MultiCallbacks
+    if 'callbacks' in kwargs['config']:
+        kwargs['config']['callbacks'] = \
+            import_class(kwargs['config']['callbacks'])
+
+    # handle the tune logger callbacks
     if 'callbacks' not in kwargs:
         kwargs['callbacks'] = []
     else:
@@ -82,7 +90,14 @@ def make_basic_rllib_config(
 
     kwargs['callbacks'].append(MetaLoggerCallback(meta_writer))
 
+    meta_writer.objs_to_pickle = kwargs  # type: ignore
+
     return params, kwargs
+
+
+# pylint: disable=unused-argument
+def dirname_creator(trial: ray.tune.experiment.Trial) -> str:
+    return str(uuid.uuid4())[:5]
 
 
 def gen_passwd(size: int) -> str:

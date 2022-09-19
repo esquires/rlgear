@@ -8,7 +8,7 @@ import pprint
 import subprocess as sp
 from pathlib import Path
 from typing import Iterable, List, Union, Dict, Tuple, Optional, Sequence, \
-    Any, TypedDict
+    Any, TypedDict, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -70,36 +70,22 @@ class MetaWriter():
     # pylint: disable=too-many-locals
     def __init__(
             self,
-            repo_roots: Union[Iterable[StrOrPath], StrOrPath],
-            files: Union[Iterable[StrOrPath], StrOrPath],
+            repo_roots: Dict[str, Dict[str, Any]],
+            files: Iterable[StrOrPath],
             str_data: Optional[Dict[str, str]] = None,
             objs_to_pickle: Optional[List[Any]] = None,
             print_log_dir: bool = True,
-            symlink_dir: str = ".",
-            check_clean: Union[Iterable[bool], bool] = False):
+            symlink_dir: str = "."):
 
-        def _to_list_of_paths(var: Union[Iterable[StrOrPath], StrOrPath]) \
-                -> List[Path]:
-            var_list = [var] if isinstance(repo_roots, (str, Path)) else var
-            return [Path(v) for v in var_list]  # type: ignore
-
-        roots = _to_list_of_paths(repo_roots)
-        if not isinstance(check_clean, list):
-            check_clean = [bool(check_clean) for _ in range(len(roots))]
-
-        self.files = _to_list_of_paths(files)
+        self.files = files
         self.str_data = str_data or {}
         self.objs_to_pickle = objs_to_pickle
+        self.print_log_dir = print_log_dir
         self.symlink_dir = Path(symlink_dir).expanduser()
 
-        try:
-            self.requirements = sp.check_output(
-                ['pip3', 'freeze']).decode(encoding='UTF-8')
-        except FileNotFoundError:
-            self.requirements = sp.check_output(
-                ['pip', 'freeze']).decode(encoding='UTF-8')
-
-        self.print_log_dir = print_log_dir
+        # https://stackoverflow.com/a/58013217
+        self.requirements = sp.check_output(
+            [sys.executable, '-m', 'pip', 'freeze']).decode('UTF-8')
 
         self.cmd = " ".join(sys.argv)
 
@@ -110,17 +96,28 @@ class MetaWriter():
         except ImportError:
             pass
         else:
+            # avoids mypy error:
+            # Trying to read deleted variable "exc"
+            git_exc: Any = git.exc  # type: ignore
 
-            for repo_root, check in zip(roots, check_clean):
-                # avoids mypy error:
-                # Trying to read deleted variable "exc"
-                git_exc: Any = git.exc  # type: ignore
+            for repo_root, repo_config in repo_roots.items():
+
                 try:
-                    repo = git.Repo(repo_root,
-                                    search_parent_directories=True)
-                    diff = sp.check_output(
-                        ['git', 'diff'],
-                        cwd=repo.working_dir).decode(encoding='UTF-8')
+                    repo = git.Repo(repo_root, search_parent_directories=True)
+                    cwd = repo.working_dir
+                    assert cwd is not None
+
+                    def _get(_cmd: Iterable[str]) -> str:
+                        # pylint: disable=cell-var-from-loop
+                        return sp.check_output(
+                            _cmd, cwd=cwd).decode('UTF-8')  # type: ignore
+
+                    diff = _get(['git', 'diff'])
+                    base_commit = repo_config['base_commit']
+                    patch = _get(
+                        ['git', 'format-patch', '--stdout', base_commit])
+                    base_commit_hash = _get(
+                        ['git', 'rev-parse', '--short', base_commit]).strip()
 
                 # pylint: disable=no-member
                 except (git_exc.InvalidGitRepositoryError,
@@ -130,15 +127,18 @@ class MetaWriter():
                     print((f'ignoring the previous git error for {repo_root}.'
                            'This git repo will not be saved.'))
                 else:
-                    if check:
+                    if repo_config['check_clean']:
                         assert not repo.head.commit.diff(None), \
                             ("check_clean is set to True for "
                              f"{repo.common_dir} but the status is not clean")
-                    assert repo.working_dir is not None
-                    self.git_info[Path(repo.working_dir).stem] = {
-                        'repo_dir': repo.working_dir,
+
+                    self.git_info[Path(cwd).stem] = {
                         'commit': repo.commit().name_rev,
-                        'diff': diff}
+                        'patch': patch,
+                        'patch_fname':
+                            f'patch_rel_to_{base_commit_hash}.patch',
+                        'diff': diff
+                    }
 
     # pylint: disable=too-many-locals
     def write(self, logdir: str) -> None:
@@ -147,11 +147,7 @@ class MetaWriter():
 
         if self.symlink_dir:
             link_tgt = self.symlink_dir / 'latest'
-            try:
-                # can add missing_ok in python 3.8
-                link_tgt.unlink()
-            except FileNotFoundError:
-                pass
+            link_tgt.unlink(missing_ok=True)
 
             try:
                 link_tgt.symlink_to(logdir, target_is_directory=True)
@@ -179,36 +175,20 @@ class MetaWriter():
             f.write(self.requirements)
 
         for repo_name, repo_data in self.git_info.items():
-            commit = str(repo_data['commit'])
-            commit_only = commit.split(" ", maxsplit=1)[0]
-            repo_dir = repo_data['repo_dir']
-
             meta_repo_dir = meta_dir / repo_name
             meta_repo_dir.mkdir(exist_ok=True)
 
             with open(meta_repo_dir / (repo_name + '_commit.txt'),
                       'w', encoding='UTF-8') as f:
-                f.write(commit)
+                f.write(repo_data['commit'])
 
-            code = [
-                "import subprocess as sp",
-                f"repo_dir = '{repo_dir}'",
-                f"print('stashing changes in {repo_dir}')",
-                "sp.call(['git', 'stash'], cwd=repo_dir)",
-                f"sp.call(['git', 'checkout', '{commit_only}'], cwd=repo_dir)",
-            ]
+            diff_file = meta_repo_dir / (repo_name + '_diff.diff')
+            with open(diff_file, 'w', encoding='UTF-8') as f:
+                f.write(repo_data['diff'])
 
-            if repo_data['diff']:
-                diff_file = meta_repo_dir / (repo_name + '_diff.diff')
-                with open(diff_file, 'w', encoding='UTF-8') as f:
-                    f.write(str(repo_data['diff']))
-                code.append(
-                    (f"sp.call(['git', 'apply', '{diff_file.resolve()}'], "
-                     "cwd=repo_dir)"))
-
-            with open(meta_repo_dir / (repo_name + '_restore.py'),
-                      'w', encoding='UTF-8') as f:
-                f.write("\n".join(code))
+            patch_file = meta_repo_dir / repo_data['patch_fname']
+            with open(patch_file, 'w', encoding='UTF-8') as f:
+                f.write(repo_data['patch'])
 
 
 def find_filepath(
@@ -399,9 +379,15 @@ class ImportClassDict(TypedDict):
 
 def import_class(class_info: Union[str, ImportClassDict]) -> Any:
     def _get_class(class_str: str) -> Any:
-        split = class_str.split('.')
-        return getattr(
-            importlib.import_module('.'.join(split[:-1])), split[-1])
+        _split = class_str.split('.')
+        try:
+            _module = importlib.import_module('.'.join(_split[:-1]))
+            return getattr(_module, _split[-1])
+        except ModuleNotFoundError:
+            # e.g. when an object contains another object (e.g. a staticmethod
+            # within a class)
+            _module = importlib.import_module('.'.join(_split[:-2]))
+            return getattr(getattr(_module, _split[-2]), _split[-1])
 
     if isinstance(class_info, str):
         return _get_class(class_info)
@@ -444,3 +430,14 @@ def add_to_dict(overrides: dict, keys: List[str], val: Any) -> None:
             d = d[key]
 
     d[keys[-1]] = val
+
+
+T = TypeVar('T')
+
+
+def interp(x: T, x_low: Any, x_high: Any, y_low: Any, y_high: Any) -> T:
+    if x_low == x_high:
+        return y_low
+    else:
+        pct = (x - x_low) / (x_high - x_low)
+        return y_low + pct * (y_high - y_low)

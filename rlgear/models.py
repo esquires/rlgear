@@ -378,6 +378,8 @@ class MLPNet(nn.Module):
         else:
             self.head = nn.Linear(num_inp, num_out)
 
+        self.logits: Optional[torch.Tensor] = None
+
         init_modules([self.trunk, self.head])
 
     # pylint: disable=unused-argument
@@ -393,6 +395,7 @@ class MLPNet(nn.Module):
         else:
             self.emb = x
         self.logits = self.head(self.emb)
+        assert self.logits is not None
         return self.logits, []
 
     # pylint: disable=no-self-use
@@ -421,6 +424,7 @@ class LSTMNet(nn.Module):
             self.lstm_dropout = nn.Dropout(p=self.dropout_pct)
             init_modules([self.lstm_dropout])
 
+        self.logits: Optional[torch.Tensor] = None
         self.linear = nn.Linear(hiddens[-1], num_out)
         init_modules([self.linear])
         self.lstm_size = hiddens[-1]
@@ -460,7 +464,7 @@ class LSTMNet(nn.Module):
         self.logits = self.linear(self.emb)
 
         state_out = [s.view([s.shape[1], s.shape[2]]) for s in state_out]
-        return self.logits, state_out
+        return self.logits, state_out  # type: ignore
 
     def get_initial_state(self) -> List[torch.Tensor]:
         if self.mlp is not None:

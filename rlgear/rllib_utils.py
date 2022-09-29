@@ -1,13 +1,15 @@
 import argparse
-import uuid
 import os
 import string
 import random
 from typing import Tuple, Any, Iterable, Union, Dict
 
 import yaml
+
 import ray
 import ray.tune.utils
+from ray.rllib.evaluation.episode import Episode
+from ray.rllib.evaluation.episode_v2 import EpisodeV2
 
 from .utils import MetaWriter, get_inputs, parse_inputs, get_log_dir, \
     StrOrPath, dict_str2num, import_class
@@ -97,7 +99,22 @@ def make_rllib_config(
 
 # pylint: disable=unused-argument
 def dirname_creator(trial: ray.tune.experiment.Trial) -> str:
-    return str(uuid.uuid4())[:5]
+    return trial.trial_id.split('_')[0]
+
+
+class InfoToCustomMetricsCallback(
+        ray.rllib.algorithms.callbacks.DefaultCallbacks):
+    # pylint: disable=arguments-differ,no-self-use
+    def on_episode_end(
+        self,
+        *_: Any,
+        episode: Union[Episode, EpisodeV2, Exception],
+        **__: Any,
+    ) -> None:
+        assert isinstance(episode, Episode)
+        for info in episode._agent_to_last_info.values():
+            episode.custom_metrics.update(
+                ray.tune.utils.flatten_dict(info.copy()))
 
 
 def gen_passwd(size: int) -> str:

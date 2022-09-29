@@ -1,9 +1,13 @@
 import sys
+import collections
+import functools
+import glob
+import re
+import difflib
 import importlib
 import pickle
 import copy
 import shutil
-import re
 import pprint
 import subprocess as sp
 from pathlib import Path
@@ -13,51 +17,10 @@ from typing import Iterable, List, Union, Dict, Tuple, Optional, Sequence, \
 import numpy as np
 import pandas as pd
 
+import plotly
+import plotly.graph_objects as go
+
 import yaml
-
-import tqdm
-
-try:
-    import matplotlib.pyplot as plt
-    import matplotlib.ticker as mtick
-except ImportError:
-    import warnings
-    warnings.warn(
-        'matplotlib not found, not defining plot_percentiles or plot_progress')
-
-else:
-    def plot_percentiles(
-            ax: plt.axis, df: pd.DataFrame, percentiles: Tuple[float, float],
-            alpha: float) -> None:
-
-        assert 0 <= alpha <= 1
-
-        assert len(percentiles) == 2 and \
-            0 <= percentiles[0] <= 1 and \
-            0 <= percentiles[1] <= 1, "percentiles must be between 0 and 1"
-
-        pct_low = df.quantile(percentiles[0], axis=1)
-        pct_high = df.quantile(percentiles[1], axis=1)
-        ax.fill_between(df.index, pct_low, pct_high, alpha=alpha)
-
-    # pylint: disable=too-many-arguments
-    def plot_progress(
-            ax: plt.axis,
-            dfs: List[pd.DataFrame],
-            names: Iterable[str],
-            percentiles: Optional[Tuple[float, float]] = None,
-            alpha: float = 0.1,
-            xtick_interval: Optional[float] = None) -> None:
-
-        for name, df in zip(names, dfs):
-            df = df[~np.isnan(df.mean(axis=1))]
-            ax.plot(df.index, df.mean(axis=1), label=name)
-
-            if percentiles:
-                plot_percentiles(ax, df, percentiles, alpha)
-
-        if xtick_interval:
-            ax.xaxis.set_major_locator(mtick.MultipleLocator(xtick_interval))
 
 
 StrOrPath = Union[str, Path]
@@ -296,14 +259,17 @@ def get_log_dir(log_params: Dict[str, str],
     return prefix / log_params['exp_group'] / Path(yaml_fname).stem / exp_name
 
 
-def merge_dfs(_dfs: Sequence[pd.DataFrame]) -> pd.DataFrame:
-    _df = _dfs[0]
-    if len(_dfs) > 1:
-        for i, __df in enumerate(_dfs[1:]):
-            _df = _df.join(__df, how='outer', rsuffix=f'_{i+1}')
-        cols = [f'values_{i}' for i in range(len(_dfs))]
-        _df.columns = cols
-    return _df
+def merge_dfs(
+    dfs: Sequence[pd.DataFrame],
+    names: Optional[Sequence[str]] = None
+) -> pd.DataFrame:
+
+    df = dfs[0]
+    if len(dfs) > 1:
+        for i, _df in enumerate(dfs[1:]):
+            df = df.join(_df, how='outer', rsuffix=f'_{i+1}')
+        df.columns = names or [f'values_{i}' for i in range(len(dfs))]
+    return df
 
 
 def shorten_dfs(_dfs: Sequence[pd.DataFrame], max_step: int = None) -> None:
@@ -317,59 +283,165 @@ def shorten_dfs(_dfs: Sequence[pd.DataFrame], max_step: int = None) -> None:
         _dfs[i] = _df[_df.index <= max_step]  # type: ignore
 
 
-# pylint: disable=too-many-locals,too-many-branches,too-many-arguments
+def group_experiments(base_dir: Path) -> Dict[str, List[Path]]:
+    # https://stackoverflow.com/a/57594612
+    progress_files = glob.glob(
+        str(base_dir) + '/**/progress.csv', recursive=True)
+
+    out: Dict[str, List[Path]] = collections.defaultdict(list)
+    for f in progress_files:
+        name = '_'.join(Path(f).parent.name.split('_')[:3])
+        out[name].append(Path(f).parent)
+
+    return {k: sorted(v) for k, v in out.items()}
+
+
 def get_progress(
-        base_dirs: Iterable[StrOrPath],
-        tag: str,
-        x_tag: str = 'timesteps_total',
-        only_complete_data: bool = False,
-        show_same_num_timesteps: bool = False,
-        max_step: int = None,
-        show_progress: bool = False) -> List[pd.DataFrame]:
+    experiments: Iterable[Path],
+    x_tag: str = 'timesteps_total',
+    tag: str = 'episode_reward_mean',
+    only_complete_data: bool = False,
+    max_x: Optional[Any] = None,
+    names: Optional[Sequence[str]] = None
+) -> Tuple[pd.DataFrame, List[pd.DataFrame]]:
 
-    dirs = [d for d in base_dirs if Path(d).is_dir()]
-    if dirs != list(base_dirs):
-        print(('The following base_dirs were not found: '
-               f'{set(base_dirs) - set(dirs)}'))
+    def _print_suggestions(_word: str, _possibilities: List[str]) -> None:
+        _suggestions = difflib.get_close_matches(_word, _possibilities)
 
-    out_dfs: List[pd.DataFrame] = []
-    for d in tqdm.tqdm(dirs, desc="Reading files") if show_progress else dirs:
-        progress_files = list(Path(d).rglob('progress.csv'))
+        if _suggestions:
+            print(f'suggestions for "{_word}": {", ".join(_suggestions)}')
 
-        # this is not a list comprehension because there are cases
-        # where the progress.csv file exists but is empty
-        dfs = []
-        for fname in progress_files:
+    dfs = []
+    for exp in experiments:
+        try:
+            df = pd.read_csv(exp / 'progress.csv', low_memory=False)
+        except pd.errors.EmptyDataError:
+            print('{exp} has empty progress.csv, skipping')
+            continue
+
+        try:
+            df = df[[x_tag, tag]].set_index(x_tag)
+        except KeyError as e:
+            keys = list(df.columns)
+            print('Error setting index for')
+            print(str(exp))
+            print('available keys are')
+            pprint.pprint(keys)
+            if x_tag not in keys:
+                _print_suggestions(x_tag, keys)
+            if tag not in keys:
+                _print_suggestions(tag, keys)
+            print('skipping')
+            raise e
+
+        dfs.append(df)
+
+    if only_complete_data:
+        shorten_dfs(dfs)
+
+    if max_x is not None:
+        shorten_dfs(dfs, max_x)
+    if not names:
+        names = []
+        for exp in experiments:
             try:
-                dfs.append(pd.read_csv(fname, low_memory=False))
-            except pd.errors.EmptyDataError:
-                print(f'{fname} is empty, skipping')
+                names.append(exp.name.split('_')[3])
+            except IndexError:
+                names.append(exp.name)
 
-        i = 0
-        while i < len(dfs):
-            try:
-                dfs[i] = dfs[i][[x_tag, tag]].set_index(x_tag)
-                i += 1
-            except KeyError as e:
-                print(e)
-                print(f'Error setting index for {progress_files[i]}')
-                pprint.pprint(f'available keys are {list(dfs[i].columns)}')
-                pprint.pprint('skipping')
-                del dfs[i]
+    return merge_dfs(dfs, names), dfs
 
-        if only_complete_data:
-            shorten_dfs(dfs)
 
-        if dfs:
-            out_dfs.append(merge_dfs(dfs))
+# pylint: disable=too-many-locals
+def plot_progress(
+    dfs: Dict[str, pd.DataFrame],
+    plot_indiv: bool = True,
+    indiv_alpha: float = 0.2,
+    percentiles: Optional[Tuple[float, float]] = None,
+    percentile_alpha: float = 0.1,
+) -> go.Figure:
+    colors = plotly.colors.DEFAULT_PLOTLY_COLORS
 
-    if show_same_num_timesteps:
-        shorten_dfs(out_dfs)
+    assert 0 <= indiv_alpha <= 1
+    assert 0 <= percentile_alpha <= 1
 
-    if max_step is not None:
-        shorten_dfs(out_dfs, max_step)
+    if percentiles is not None:
+        assert len(percentiles) == 2 and \
+            0 <= percentiles[0] <= 1 and \
+            0 <= percentiles[1] <= 1, "percentiles must be between 0 and 1"
 
-    return out_dfs
+    def _make_transparency(_color: str, _alpha: float) -> str:
+        return f'rgba({colors[i][4:-1]}, {_alpha})'
+
+    buttons = []
+    traces: List[go.Scatter] = []
+    for i, (name, df) in enumerate(dfs.items()):
+
+        df = df[~np.isnan(df.mean(axis=1))]
+        beg_traces = len(traces)
+
+        traces.append(go.Scatter(
+            x=df.index, y=df.mean(axis=1), name=name, showlegend=True,
+            line_color=colors[i], line_width=2, mode='lines',
+            hoverlabel_namelength=-1
+        ))
+
+        if plot_indiv:
+            clr = _make_transparency(colors[i], indiv_alpha)
+            for col in df.columns:
+                traces.append(go.Scatter(
+                    x=df.index, y=df[col], name=col, showlegend=False,
+                    line_color=clr, mode='lines',
+                    hoverlabel_namelength=-1,
+                    hoverinfo='none'
+                ))
+
+        if percentiles:
+            fill_clr = _make_transparency(colors[i], percentile_alpha)
+            line_clr = _make_transparency(colors[i], 0.0)
+
+            plt = functools.partial(
+                go.Scatter, x=df.index,
+                showlegend=False, line_color=line_clr, mode='lines',
+                hoverlabel_namelength=-1)
+            traces.append(plt(y=df.quantile(percentiles[0], axis=1),
+                              name=f'{name}-{round(100 * percentiles[0])}%'))
+            traces.append(plt(y=df.quantile(percentiles[1], axis=1),
+                          name=f'{name}-{round(100 * percentiles[1])}%',
+                          fill='tonexty', fillcolor=fill_clr))
+
+        idxs = list(range(beg_traces, len(traces)))
+        buttons.append({
+            'method': 'restyle',
+            'label': name,
+            'visible': True,
+            'args': [{'visible': True}, idxs],
+            'args2': [{'visible': 'legendonly'}, idxs],
+        })
+
+    buttons.append({
+        'method': 'restyle',
+        'label': 'all',
+        'visible': True,
+        'args': [{'visible': True}],
+        'args2': [{'visible': 'legendonly'}]
+    })
+
+    # https://stackoverflow.com/a/65955881
+    layout = go.Layout(
+        updatemenus=[{
+            'type': 'buttons',
+            'direction': 'left',
+            'x': 1,
+            'y': -0.1,
+            'showactive': True,
+            'buttons': buttons
+        }],
+        showlegend=True,
+        hovermode='x unified',
+        hoverlabel_bgcolor='rgba(255, 255, 255, 0.5)')
+
+    return go.Figure(data=traces, layout=layout)
 
 
 class ImportClassDict(TypedDict):

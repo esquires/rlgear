@@ -38,13 +38,14 @@ class MetaWriter():
             str_data: Optional[Dict[str, str]] = None,
             objs_to_pickle: Optional[List[Any]] = None,
             print_log_dir: bool = True,
-            symlink_dir: str = "."):
+            symlink_dir: Optional[str] = "."):
 
-        self.files = files
+        self.files = [Path(f).absolute() for f in files]
         self.str_data = str_data or {}
         self.objs_to_pickle = objs_to_pickle
         self.print_log_dir = print_log_dir
-        self.symlink_dir = Path(symlink_dir).expanduser()
+        self.symlink_dir = \
+            Path(symlink_dir).expanduser() if symlink_dir else None
 
         # https://stackoverflow.com/a/58013217
         self.requirements = sp.check_output(
@@ -396,7 +397,7 @@ def plot_progress(
                     hoverinfo='none'
                 ))
 
-        if percentiles:
+        if len(df.columns) > 1 and percentiles:
             fill_clr = _make_transparency(colors[i], percentile_alpha)
             line_clr = _make_transparency(colors[i], 0.0)
 

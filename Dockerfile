@@ -28,6 +28,10 @@ COPY ./setup.py /root/rlgear_deps/setup.py
 RUN mkdir /root/rlgear_deps/rlgear
 RUN source ~/venvs/rlgear/bin/activate && pip install /root/rlgear_deps
 
+# ray 2.0.0 is not updated to the latest gym
+RUN source ~/venvs/rlgear/bin/activate && \
+    pip install gym==0.23.1
+
 RUN source ~/venvs/rlgear/bin/activate && python --version
 COPY ./ /root/rlgear
 WORKDIR /root/rlgear

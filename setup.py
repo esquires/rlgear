@@ -12,7 +12,7 @@ setup(
         "git-python",
         "tabulate",
         "pandas",
-        "matplotlib",
+        "plotly",
         "gym",
         "dataclasses",
         # ray packages

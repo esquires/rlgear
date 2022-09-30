@@ -3,7 +3,7 @@ log:
         - ~/
     exp_group: 'ray_results'
 
-git_repos:
+repos:
   check_clean: False
   paths:
     - .

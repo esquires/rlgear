@@ -48,7 +48,7 @@ def make_rllib_config(
 
     # loggers = list(ray.tune.logger.DEFAULT_LOGGERS)
     meta_writer = MetaWriter(
-        repo_roots=params['git_repos'],
+        repo_roots=params['repos'],
         files=inputs,
         str_data={'merged_params.yaml': yaml.dump(params)})
 

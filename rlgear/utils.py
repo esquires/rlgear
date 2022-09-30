@@ -34,13 +34,15 @@ class MetaWriter():
     def __init__(
             self,
             repo_roots: Dict[str, Dict[str, Any]],
-            files: Iterable[StrOrPath],
+            files: Iterable[StrOrPath] = None,
+            dirs: Iterable[StrOrPath] = None,
             str_data: Optional[Dict[str, str]] = None,
             objs_to_pickle: Optional[List[Any]] = None,
             print_log_dir: bool = True,
             symlink_dir: Optional[str] = "."):
 
-        self.files = [Path(f).absolute() for f in files]
+        self.files = [] if not files else [Path(f).absolute() for f in files]
+        self.dirs = [] if not dirs else [Path(d).absolute() for d in dirs]
         self.str_data = str_data or {}
         self.objs_to_pickle = objs_to_pickle
         self.print_log_dir = print_log_dir
@@ -78,10 +80,12 @@ class MetaWriter():
 
                     diff = _get(['git', 'diff'])
                     base_commit = repo_config['base_commit']
-                    patch = _get(
-                        ['git', 'format-patch', '--stdout', base_commit])
+                    base = _get(
+                        ['git', 'merge-base', 'HEAD', base_commit]).strip()
+
+                    patch = _get(['git', 'format-patch', '--stdout', base])
                     base_commit_hash = _get(
-                        ['git', 'rev-parse', '--short', base_commit]).strip()
+                        ['git', 'rev-parse', '--short', base]).strip()
 
                 # pylint: disable=no-member
                 except (git_exc.InvalidGitRepositoryError,
@@ -131,6 +135,11 @@ class MetaWriter():
 
         for fname in self.files:
             shutil.copy2(fname, meta_dir)
+
+        (meta_dir / 'dirs').mkdir(exist_ok=True)
+        for d in self.dirs:
+            # shutil.copytree fails when files are changing so just call cp
+            sp.call(['cp', str(d), str(meta_dir / 'dirs' / d.name), '-r'])
 
         with open(meta_dir / 'args.txt', 'w', encoding='UTF-8') as f:
             f.write(self.cmd)

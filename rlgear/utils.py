@@ -12,7 +12,7 @@ import pprint
 import subprocess as sp
 from pathlib import Path
 from typing import Iterable, List, Union, Dict, Tuple, Optional, Sequence, \
-    Any, TypedDict, TypeVar
+    Any, TypedDict, TypeVar, Callable
 
 import numpy as np
 import pandas as pd
@@ -34,15 +34,17 @@ class MetaWriter():
     def __init__(
             self,
             repo_roots: Dict[str, Dict[str, Any]],
-            files: Iterable[StrOrPath] = None,
-            dirs: Iterable[StrOrPath] = None,
+            files: Optional[Iterable[StrOrPath]] = None,
+            dirs: Optional[Iterable[StrOrPath]] = None,
+            ignore_patterns: Optional[Iterable[str]] = None,
             str_data: Optional[Dict[str, str]] = None,
             objs_to_pickle: Optional[List[Any]] = None,
             print_log_dir: bool = True,
             symlink_dir: Optional[str] = "."):
 
-        self.files = [] if not files else [Path(f).absolute() for f in files]
-        self.dirs = [] if not dirs else [Path(d).absolute() for d in dirs]
+        self.files = [Path(f).absolute() for f in files] if files else []
+        self.dirs = [Path(d).absolute() for d in dirs] if dirs else []
+        self.ignore_patterns = ignore_patterns
         self.str_data = str_data or {}
         self.objs_to_pickle = objs_to_pickle
         self.print_log_dir = print_log_dir
@@ -137,9 +139,10 @@ class MetaWriter():
             shutil.copy2(fname, meta_dir)
 
         (meta_dir / 'dirs').mkdir(exist_ok=True)
+        ignore = shutil.ignore_patterns(*self.ignore_patterns) \
+            if self.ignore_patterns else None
         for d in self.dirs:
-            # shutil.copytree fails when files are changing so just call cp
-            sp.call(['cp', str(d), str(meta_dir / 'dirs' / d.name), '-r'])
+            shutil.copytree(d, meta_dir / 'dirs' / d.name, ignore=ignore)
 
         with open(meta_dir / 'args.txt', 'w', encoding='UTF-8') as f:
             f.write(self.cmd)
@@ -293,15 +296,34 @@ def shorten_dfs(_dfs: Sequence[pd.DataFrame], max_step: int = None) -> None:
         _dfs[i] = _df[_df.index <= max_step]  # type: ignore
 
 
-def group_experiments(base_dir: Path) -> Dict[str, List[Path]]:
+def group_experiments(
+    base_dir: Path,
+    name_cb: Optional[Callable[[Path], str]] = None
+) -> Dict[str, List[Path]]:
+
+    if name_cb is None:
+
+        def name_cb(_f: Path) -> str:
+            return '_'.join(Path(_f).parent.name.split('_')[:3])
+
+    assert name_cb is not None
+
     # https://stackoverflow.com/a/57594612
-    progress_files = glob.glob(
-        str(base_dir) + '/**/progress.csv', recursive=True)
+    progress_files = [
+        Path(f) for f in
+        glob.glob(str(base_dir) + '/**/progress.csv', recursive=True)]
 
     out: Dict[str, List[Path]] = collections.defaultdict(list)
-    for f in progress_files:
-        name = '_'.join(Path(f).parent.name.split('_')[:3])
-        out[name].append(Path(f).parent)
+    error_files: List[str] = []
+    for progress_file in progress_files:
+        if (progress_file.parent / 'error.txt').exists():
+            error_files.append(str(progress_file.parent))
+
+        out[name_cb(progress_file)].append(progress_file.parent)
+
+    if error_files:
+        print('Errors detected in runs:')
+        print('\n'.join(error_files))
 
     return {k: sorted(v) for k, v in out.items()}
 

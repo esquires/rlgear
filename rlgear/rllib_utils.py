@@ -64,23 +64,28 @@ def make_rllib_config(
     for blk in params['rllib']['tune_kwargs_blocks'].split(','):
         kwargs = ray.tune.utils.merge_dicts(kwargs, params['rllib'][blk])
 
+    cfg = kwargs['config']
+
     if debug:
         kwargs['local_dir'] = os.path.join(kwargs['local_dir'], 'debug')
-        kwargs['config']['num_workers'] = 0
-        kwargs['config']['num_gpus'] = 0
+        cfg['num_workers'] = 0
+        cfg['num_gpus'] = 0
         kwargs['num_samples'] = 1
         if kwargs['verbose'] == 0:
             kwargs['verbose'] = 1
-        if kwargs['config']['log_level'] in ['ERROR', 'WARN']:
-            kwargs['config']['log_level'] = 'INFO'
+        if cfg['log_level'] in ['ERROR', 'WARN']:
+            cfg['log_level'] = 'INFO'
 
     # handle the rllib logger callbacks. These are more complicated because
     # they need to be classes, not the objects. For now just handling
     # the case of a single callback but if needed in the future add support
     # for callbacks.MultiCallbacks
-    if 'callbacks' in kwargs['config']:
-        kwargs['config']['callbacks'] = \
-            import_class(kwargs['config']['callbacks'])
+    if 'callbacks' in cfg:
+        if isinstance(cfg['callbacks'], str):
+            cfg['callbacks'] = import_class(cfg['callbacks'])
+        else:
+            cfg['callbacks'] = ray.rllib.algorithms.callbacks.MultiCallbacks(
+                [import_class(cb) for cb in cfg['callbacks']])
 
     # handle the tune logger callbacks
     if 'callbacks' not in kwargs:

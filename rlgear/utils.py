@@ -1,5 +1,6 @@
 import sys
 import collections
+import os
 import functools
 import glob
 import re
@@ -55,7 +56,10 @@ class MetaWriter():
         self.requirements = sp.check_output(
             [sys.executable, '-m', 'pip', 'freeze']).decode('UTF-8')
 
-        self.cmd = " ".join(sys.argv)
+        self.orig_dir = Path(os.getcwd())
+
+        self.cmd = self._rel_path(Path(sys.executable)) \
+            + " " + " ".join(sys.argv)
 
         self.git_info = {}
         try:
@@ -107,10 +111,14 @@ class MetaWriter():
                         'patch': patch,
                         'patch_fname':
                             f'patch_rel_to_{base_commit_hash}.patch',
-                        'diff': diff
+                        'base_commit_hash': base_commit_hash,
+                        'diff': diff,
+                        'repo_dir': Path(cwd),
+                        'copy_repo': repo_config['copy_repo'],
+                        'ignore': repo_config.get('ignore', [])
                     }
 
-    # pylint: disable=too-many-locals
+    # pylint: disable=too-many-locals,too-many-statements
     def write(self, logdir: str) -> None:
         if self.print_log_dir:
             print(f'log dir: {logdir}')
@@ -124,7 +132,7 @@ class MetaWriter():
             except FileExistsError:
                 pass
 
-        meta_dir = Path(logdir) / 'meta'
+        meta_dir = (Path(logdir) / 'meta').resolve()
         meta_dir.mkdir(exist_ok=True)
 
         for fname_str, data in self.str_data.items():
@@ -165,6 +173,60 @@ class MetaWriter():
             patch_file = meta_repo_dir / repo_data['patch_fname']
             with open(patch_file, 'w', encoding='UTF-8') as f:
                 f.write(repo_data['patch'])
+
+            if repo_data['copy_repo']:
+                files = set(sp.check_output(
+                    ['git', 'ls-files'], cwd=str(repo_data['repo_dir'])
+                ).decode('UTF-8').splitlines())  # type: ignore
+
+                status_files = sp.check_output(
+                    ['git', 'status', '-s'], cwd=str(repo_data['repo_dir'])
+                ).decode('UTF-8').splitlines()  # type: ignore
+
+                files |= {s.split(' ')[1] for s in status_files
+                          if s.startswith('??')}
+
+                for f in files:  # type: ignore
+                    if not (repo_data['repo_dir'] / f / '.git').exists():
+                        out = meta_repo_dir / 'repo' / Path(f)  # type: ignore
+                        out.parent.mkdir(exist_ok=True, parents=True)
+                        inp = (repo_data['repo_dir']
+                               / Path(f)).resolve()  # type: ignore
+                        shutil.copy2(inp, out)
+
+        msg = ('You can recreate the experiment as follows:\n\n```bash\n'
+               '# checkout code\n')
+
+        for repo_name, repo_data in self.git_info.items():
+            d = meta_dir / repo_name
+
+            msg += f"cd {self._rel_path(repo_data['repo_dir'])}\n"
+            msg += f"git reset --hard {repo_data['base_commit_hash']}"
+            msg += ("  # probably want to git stash or "
+                    "otherwise save before this line\n")
+
+            diff_file_str = self._rel_path(d / (repo_name + '_diff.diff'))
+            patch_file = self._rel_path(d / repo_data['patch_fname'])
+
+            msg += f"git am -3 {patch_file}\n"
+            msg += f"git apply {diff_file_str}\n\n"
+
+        msg += (
+            '# run experiment (see also requirements.txt for dependencies)\n'
+            f'cd {self._rel_path(self.orig_dir)}\n'
+            f'{self.cmd}\n')
+        msg += '```'
+
+        with open(meta_dir / 'README.md', 'w', encoding='UTF-8') as f:
+            f.write(msg)
+
+    @staticmethod
+    def _rel_path(path: Path) -> str:
+
+        try:
+            return f'~/{Path(path).relative_to(Path.home())}'
+        except ValueError:
+            return str(path)
 
 
 def find_filepath(

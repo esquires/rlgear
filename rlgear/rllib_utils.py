@@ -1,10 +1,14 @@
 import argparse
+import collections
+import re
+import csv
 import os
 import string
 import random
-from typing import Tuple, Any, Iterable, Union, Dict
+from typing import Tuple, Any, Iterable, Union, Dict, Set, List
 
 import yaml
+import numpy as np
 
 import ray
 import ray.tune.utils
@@ -23,6 +27,61 @@ class MetaLoggerCallback(ray.tune.logger.LoggerCallback):
         self.meta_writer.write(trial.logdir)
 
 
+class CSVAllFieldsLoggerCallback(ray.tune.logger.csv.CSVLoggerCallback):
+    def __init__(self, wait_iterations: int, excludes: List[str]):
+        super().__init__()
+        self.wait_iterations = wait_iterations
+        self.prior_results: Dict = collections.defaultdict(list)
+        self.keys: Set[str] = set()
+        self.excludes = excludes
+
+    def log_trial_result(
+        self,
+        iteration: int,
+        trial: ray.tune.experiment.trial.Trial,
+        result: Dict[str, Any]
+    ) -> None:
+        if trial not in self._trial_files:
+            self._setup_trial(trial)
+
+        tmp = result.copy()
+        tmp.pop("config", None)
+        result = ray.tune.utils.flatten_dict(tmp, delimiter="/")
+
+        self.keys |= set(result)
+
+        if not self._trial_csv[trial] and \
+                result['training_iteration'] >= self.wait_iterations:
+            # filter the results: explict excludes as well as those that are
+            # lists
+            keys = set()
+            regexes = [re.compile(e) for e in self.excludes]
+            for key in self.keys:
+                if not any(regex.match(key) for regex in regexes) and \
+                        not any(isinstance(res.get(key, np.nan), (str, list))
+                                for res in self.prior_results[trial]):
+                    keys.add(key)
+
+            self._trial_csv[trial] = csv.DictWriter(
+                self._trial_files[trial], keys
+            )
+            if not self._trial_continue[trial]:
+                self._trial_csv[trial].writeheader()
+
+            for r in self.prior_results[trial]:
+                self._trial_csv[trial].writerow(
+                    {k: r.get(k, np.nan)
+                     for k in self._trial_csv[trial].fieldnames})
+
+        if self._trial_csv[trial]:
+            self._trial_csv[trial].writerow(
+                {k: result.get(k, np.nan)
+                 for k in self._trial_csv[trial].fieldnames})
+            self._trial_files[trial].flush()
+        else:
+            self.prior_results[trial].append(result)
+
+
 def add_rlgear_args(parser: argparse.ArgumentParser) \
         -> argparse.ArgumentParser:
     parser.add_argument('yaml_file')
@@ -32,6 +91,7 @@ def add_rlgear_args(parser: argparse.ArgumentParser) \
     return parser
 
 
+# pylint: disable=too-many-branches
 def make_rllib_config(
     yaml_file: StrOrPath,
     exp_name: str,
@@ -95,6 +155,9 @@ def make_rllib_config(
             if isinstance(cb, dict):
                 kwargs['callbacks'][i] = import_class(kwargs['callbacks'][i])
 
+    if 'csv' in params:
+        kwargs['callbacks'].append(CSVAllFieldsLoggerCallback(
+            params['csv']['wait_iterations'], params['csv']['excludes']))
     kwargs['callbacks'].append(MetaLoggerCallback(meta_writer))
 
     meta_writer.objs_to_pickle = kwargs  # type: ignore

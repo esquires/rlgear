@@ -4,9 +4,13 @@ log:
     exp_group: 'ray_results'
 
 repos:
-  check_clean: False
-  paths:
-    - .
+  .: {base_commit: origin/master, check_clean: false, copy_repo: false}
+
+csv:
+  wait_iterations: 10
+  excludes:
+  - '.*max$'
+  - '.*min$'
 
 rllib:
     tune_kwargs_blocks: 'common_params'

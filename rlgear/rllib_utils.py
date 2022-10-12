@@ -27,7 +27,54 @@ class MetaLoggerCallback(ray.tune.logger.LoggerCallback):
         self.meta_writer.write(trial.logdir)
 
 
-class CSVAllFieldsLoggerCallback(ray.tune.logger.csv.CSVLoggerCallback):
+class Filter:
+    def __init__(self, excludes: List[str]):
+        self.regexes = [re.compile(e) for e in excludes]
+
+    def __call__(self, d: Dict[str, Any]) -> Dict[str, Any]:
+        flat_result = ray.tune.utils.flatten_dict(d, delimiter="/")
+
+        out = {}
+
+        for key, val in flat_result.items():
+            if not any(regex.match(key) for regex in self.regexes):
+                out[key] = val
+
+        return out
+
+
+class TBXFilteredLoggerCallback(
+            ray.tune.logger.tensorboardx.TBXLoggerCallback):
+    def __init__(self, filt: Filter):
+        super().__init__()
+        self.filt = filt
+
+    def log_trial_result(
+        self,
+        iteration: int,
+        trial: ray.tune.experiment.trial.Trial,
+        result: Dict[str, Any]
+    ) -> None:
+        super().log_trial_result(iteration, trial, self.filt(result))
+
+
+class JsonFiltredLoggerCallback(ray.tune.logger.json.JsonLoggerCallback):
+    def __init__(self, filt: Filter):
+        super().__init__()
+        self.filt = filt
+
+    def log_trial_result(
+        self,
+        iteration: int,
+        trial: ray.tune.experiment.trial.Trial,
+        result: Dict[str, Any]
+    ) -> None:
+        super().log_trial_result(iteration, trial, self.filt(result))
+
+
+class CSVFilteredLoggerCallback(ray.tune.logger.csv.CSVLoggerCallback):
+    """Filter results as well as wait to get all possible logging items."""
+
     def __init__(self, wait_iterations: int, excludes: List[str]):
         super().__init__()
         self.wait_iterations = wait_iterations
@@ -156,8 +203,17 @@ def make_rllib_config(
                 kwargs['callbacks'][i] = import_class(kwargs['callbacks'][i])
 
     if 'csv' in params:
-        kwargs['callbacks'].append(CSVAllFieldsLoggerCallback(
+        kwargs['callbacks'].append(CSVFilteredLoggerCallback(
             params['csv']['wait_iterations'], params['csv']['excludes']))
+
+    if 'tensorboard' in params:
+        kwargs['callbacks'].append(TBXFilteredLoggerCallback(
+            Filter(params['tensorboard']['excludes'])))
+
+    if 'json' in params:
+        kwargs['callbacks'].append(JsonFiltredLoggerCallback(
+            Filter(params['json']['excludes'])))
+
     kwargs['callbacks'].append(MetaLoggerCallback(meta_writer))
 
     meta_writer.objs_to_pickle = kwargs  # type: ignore

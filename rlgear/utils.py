@@ -1,7 +1,6 @@
 import sys
 import collections
 import os
-import functools
 import glob
 import re
 import difflib
@@ -25,7 +24,6 @@ import yaml
 
 
 StrOrPath = Union[str, Path]
-GymObsRewDoneInfo = Tuple[np.ndarray, float, bool, dict]
 
 
 # pylint: disable=too-many-instance-attributes,too-many-arguments
@@ -410,7 +408,7 @@ def get_progress(
         try:
             df = pd.read_csv(exp / 'progress.csv', low_memory=False)
         except pd.errors.EmptyDataError:
-            print('{exp} has empty progress.csv, skipping')
+            print(f'{exp} has empty progress.csv, skipping')
             continue
 
         try:
@@ -448,11 +446,13 @@ def get_progress(
 
 # pylint: disable=too-many-locals
 def plot_progress(
-    dfs: Dict[str, pd.DataFrame],
+    y_data_dfs: Dict[str, pd.DataFrame],
     plot_indiv: bool = True,
     indiv_alpha: float = 0.2,
     percentiles: Optional[Tuple[float, float]] = None,
     percentile_alpha: float = 0.1,
+    x_data_dfs: Optional[Dict[str, pd.DataFrame]] = None,
+    sort_x_vals: bool = True,
 ) -> go.Figure:
     colors = plotly.colors.DEFAULT_PLOTLY_COLORS
 
@@ -465,44 +465,70 @@ def plot_progress(
             0 <= percentiles[1] <= 1, "percentiles must be between 0 and 1"
 
     def _make_transparency(_color: str, _alpha: float) -> str:
-        return f'rgba({colors[i][4:-1]}, {_alpha})'
+        return f'rgba({_color[4:-1]}, {_alpha})'
+
+    def _plot(_x: Any, _y: Any, **_kwargs: Any) -> go.Scatter:
+        if sort_x_vals:
+            _idxs = np.argsort(_x)
+            _x = np.asarray(_x)[_idxs]
+            _y = np.asarray(_y)[_idxs]
+
+        return go.Scatter(x=_x, y=_y, **_kwargs)
+
+    if x_data_dfs is None:
+        x_data_dfs = {}
+        for name, df in y_data_dfs.items():
+            x_df = df.copy()
+            x_df[df.columns] = \
+                x_df.index.values[:, np.newaxis] * np.ones(df.shape)
+            x_data_dfs[name] = x_df
 
     buttons = []
     traces: List[go.Scatter] = []
-    for i, (name, df) in enumerate(dfs.items()):
+    for i, (name, df) in enumerate(y_data_dfs.items()):
 
-        df = df[~np.isnan(df.mean(axis=1))]
         beg_traces = len(traces)
+        x_df = x_data_dfs[name]
+        mask = ~np.isnan(x_df.mean(axis=1)) & ~np.isnan(df.mean(axis=1))
+        x_df = x_df[mask]
+        df = df[mask]
+        mean_x = x_df.mean(axis=1)
 
-        traces.append(go.Scatter(
-            x=df.index, y=df.mean(axis=1), name=name, showlegend=True,
-            line_color=colors[i], line_width=2, mode='lines',
+        color = colors[i % len(y_data_dfs)]
+
+        traces.append(_plot(
+            mean_x, df.mean(axis=1), name=name, showlegend=True,
+            line_color=color, line_width=2, mode='lines',
             hoverlabel_namelength=-1
         ))
 
         if plot_indiv:
-            clr = _make_transparency(colors[i], indiv_alpha)
+            clr = _make_transparency(color, indiv_alpha)
             for col in df.columns:
-                traces.append(go.Scatter(
-                    x=df.index, y=df[col], name=col, showlegend=False,
+                traces.append(_plot(
+                    x_df[col], df[col], name=col, showlegend=False,
                     line_color=clr, mode='lines',
                     hoverlabel_namelength=-1,
                     hoverinfo='none'
                 ))
 
         if len(df.columns) > 1 and percentiles:
-            fill_clr = _make_transparency(colors[i], percentile_alpha)
-            line_clr = _make_transparency(colors[i], 0.0)
+            fill_clr = _make_transparency(color, percentile_alpha)
+            line_clr = _make_transparency(color, 0.0)
 
-            plt = functools.partial(
-                go.Scatter, x=df.index,
+            traces.append(_plot(
+                mean_x, df.quantile(percentiles[0], axis=1),
                 showlegend=False, line_color=line_clr, mode='lines',
-                hoverlabel_namelength=-1)
-            traces.append(plt(y=df.quantile(percentiles[0], axis=1),
-                              name=f'{name}-{round(100 * percentiles[0])}%'))
-            traces.append(plt(y=df.quantile(percentiles[1], axis=1),
-                          name=f'{name}-{round(100 * percentiles[1])}%',
-                          fill='tonexty', fillcolor=fill_clr))
+                name=f'{name}-{round(100 * percentiles[0])}%',
+                hoverlabel_namelength=-1
+            ))
+            traces.append(_plot(
+                mean_x, df.quantile(percentiles[1], axis=1),
+                showlegend=False, line_color=line_clr, mode='lines',
+                name=f'{name}-{round(100 * percentiles[1])}%',
+                hoverlabel_namelength=-1,
+                fill='tonexty', fillcolor=fill_clr
+            ))
 
         idxs = list(range(beg_traces, len(traces)))
         buttons.append({

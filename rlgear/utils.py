@@ -454,6 +454,7 @@ def plot_progress(
     x_data_dfs: Optional[Dict[str, pd.DataFrame]] = None,
     sort_x_vals: bool = True,
 ) -> go.Figure:
+
     colors = plotly.colors.DEFAULT_PLOTLY_COLORS
 
     assert 0 <= indiv_alpha <= 1
@@ -464,6 +465,12 @@ def plot_progress(
             0 <= percentiles[0] <= 1 and \
             0 <= percentiles[1] <= 1, "percentiles must be between 0 and 1"
 
+    fig = go.Figure(layout=go.Layout(
+        showlegend=True,
+        hovermode='x unified',
+        hoverlabel_bgcolor='rgba(255, 255, 255, 0.5)'
+    ))
+
     def _make_transparency(_color: str, _alpha: float) -> str:
         return f'rgba({_color[4:-1]}, {_alpha})'
 
@@ -473,7 +480,7 @@ def plot_progress(
             _x = np.asarray(_x)[_idxs]
             _y = np.asarray(_y)[_idxs]
 
-        return go.Scatter(x=_x, y=_y, **_kwargs)
+        return fig.add_trace(go.Scatter(x=_x, y=_y, **_kwargs))
 
     if x_data_dfs is None:
         x_data_dfs = {}
@@ -483,11 +490,8 @@ def plot_progress(
                 x_df.index.values[:, np.newaxis] * np.ones(df.shape)
             x_data_dfs[name] = x_df
 
-    buttons = []
-    traces: List[go.Scatter] = []
     for i, (name, df) in enumerate(y_data_dfs.items()):
 
-        beg_traces = len(traces)
         x_df = x_data_dfs[name]
         mask = ~np.isnan(x_df.mean(axis=1)) & ~np.isnan(df.mean(axis=1))
         x_df = x_df[mask]
@@ -496,72 +500,45 @@ def plot_progress(
 
         color = colors[i % len(y_data_dfs)]
 
-        traces.append(_plot(
+        _plot(
             mean_x, df.mean(axis=1), name=name, showlegend=True,
             line_color=color, line_width=2, mode='lines',
-            hoverlabel_namelength=-1
-        ))
+            hoverlabel_namelength=-1,
+            legendgroup=name,
+        )
 
         if plot_indiv:
             clr = _make_transparency(color, indiv_alpha)
             for col in df.columns:
-                traces.append(_plot(
+                _plot(
                     x_df[col], df[col], name=col, showlegend=False,
                     line_color=clr, mode='lines',
                     hoverlabel_namelength=-1,
-                    hoverinfo='none'
-                ))
+                    hoverinfo='none',
+                    legendgroup=name,
+                )
 
         if len(df.columns) > 1 and percentiles:
             fill_clr = _make_transparency(color, percentile_alpha)
             line_clr = _make_transparency(color, 0.0)
 
-            traces.append(_plot(
+            _plot(
                 mean_x, df.quantile(percentiles[0], axis=1),
                 showlegend=False, line_color=line_clr, mode='lines',
                 name=f'{name}-{round(100 * percentiles[0])}%',
-                hoverlabel_namelength=-1
-            ))
-            traces.append(_plot(
+                hoverlabel_namelength=-1,
+                legendgroup=name,
+            )
+            _plot(
                 mean_x, df.quantile(percentiles[1], axis=1),
                 showlegend=False, line_color=line_clr, mode='lines',
                 name=f'{name}-{round(100 * percentiles[1])}%',
                 hoverlabel_namelength=-1,
-                fill='tonexty', fillcolor=fill_clr
-            ))
+                fill='tonexty', fillcolor=fill_clr,
+                legendgroup=name,
+            )
 
-        idxs = list(range(beg_traces, len(traces)))
-        buttons.append({
-            'method': 'restyle',
-            'label': name,
-            'visible': True,
-            'args': [{'visible': True}, idxs],
-            'args2': [{'visible': 'legendonly'}, idxs],
-        })
-
-    buttons.append({
-        'method': 'restyle',
-        'label': 'all',
-        'visible': True,
-        'args': [{'visible': True}],
-        'args2': [{'visible': 'legendonly'}]
-    })
-
-    # https://stackoverflow.com/a/65955881
-    layout = go.Layout(
-        updatemenus=[{
-            'type': 'buttons',
-            'direction': 'left',
-            'x': 1,
-            'y': -0.1,
-            'showactive': True,
-            'buttons': buttons
-        }],
-        showlegend=True,
-        hovermode='x unified',
-        hoverlabel_bgcolor='rgba(255, 255, 255, 0.5)')
-
-    return go.Figure(data=traces, layout=layout)
+    return fig
 
 
 class ImportClassDict(TypedDict):

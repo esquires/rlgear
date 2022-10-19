@@ -1,4 +1,5 @@
 import argparse
+import copy
 import collections
 import re
 import csv
@@ -216,7 +217,7 @@ def make_rllib_config(
 
     kwargs['callbacks'].append(MetaLoggerCallback(meta_writer))
 
-    meta_writer.objs_to_pickle = kwargs  # type: ignore
+    meta_writer.objs_to_pickle = copy.deepcopy(kwargs)  # type: ignore
 
     return params, kwargs
 

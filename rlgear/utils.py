@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Iterable, List, Union, Dict, Tuple, Optional, Sequence, \
     Any, TypedDict, TypeVar, Callable
 
+import gym
 import numpy as np
 import pandas as pd
 
@@ -98,7 +99,7 @@ class MetaWriter():
                         git_exc.NoSuchPathError,
                         sp.CalledProcessError) as e:
                     print(e)
-                    print((f'ignoring the previous git error for {repo_root}.'
+                    print((f'ignoring the previous git error for {repo_root}. '
                            'This git repo will not be saved.'))
                 else:
                     if repo_config['check_clean']:
@@ -607,3 +608,25 @@ def interp(x: T, x_low: Any, x_high: Any, y_low: Any, y_high: Any) -> T:
     else:
         pct = (x - x_low) / (x_high - x_low)
         return y_low + pct * (y_high - y_low)
+
+
+class GymLegacyAPIWrapper(gym.Wrapper):
+    def step(self, action: Any) -> Tuple[Any, float, bool, Dict[Any, Any]]:
+        out = self.env.step(action)
+
+        if len(out) == 5:
+            obs, rew, terminated, truncated, info = out  # type: ignore
+            done = terminated or truncated  # type: ignore
+        else:
+            obs, rew, done, info = out
+
+        return obs, rew, done, info
+
+    def reset(self, **kwargs: Any) -> Any:
+        out = self.env.reset(**kwargs)
+        if isinstance(out, tuple) and \
+                len(out) == 2 and \
+                isinstance(out[1], dict):
+            out = out[0]
+
+        return out

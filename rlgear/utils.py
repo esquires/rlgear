@@ -179,7 +179,8 @@ class MetaWriter():
                 ).decode('UTF-8').splitlines())  # type: ignore
 
                 status_files = sp.check_output(
-                    ['git', 'status', '-s'], cwd=str(repo_data['repo_dir'])
+                    ['git', 'status', '-s', '--untracked-files=all'],
+                    cwd=str(repo_data['repo_dir'])
                 ).decode('UTF-8').splitlines()  # type: ignore
 
                 files |= {s.split(' ')[1] for s in status_files
@@ -346,7 +347,10 @@ def merge_dfs(
     return df
 
 
-def shorten_dfs(_dfs: Sequence[pd.DataFrame], max_step: int = None) -> None:
+def shorten_dfs(
+    _dfs: Sequence[pd.DataFrame],
+    max_step: Optional[int] = None
+) -> None:
     if not _dfs:
         return
 
@@ -359,7 +363,8 @@ def shorten_dfs(_dfs: Sequence[pd.DataFrame], max_step: int = None) -> None:
 
 def group_experiments(
     base_dir: Path,
-    name_cb: Optional[Callable[[Path], str]] = None
+    name_cb: Optional[Callable[[Path], str]] = None,
+    exclude_error_experiments: bool = True
 ) -> Dict[str, List[Path]]:
 
     if name_cb is None:
@@ -379,6 +384,9 @@ def group_experiments(
     for progress_file in progress_files:
         if (progress_file.parent / 'error.txt').exists():
             error_files.append(str(progress_file.parent))
+
+            if exclude_error_experiments:
+                continue
 
         out[name_cb(progress_file)].append(progress_file.parent)
 
@@ -468,8 +476,9 @@ def plot_progress(
 
     fig = go.Figure(layout=go.Layout(
         showlegend=True,
-        hovermode='x unified',
-        hoverlabel_bgcolor='rgba(255, 255, 255, 0.5)'
+        hovermode='x',
+        hoverlabel_bgcolor='rgba(255, 255, 255, 0.5)',
+        font_size=24
     ))
 
     def _make_transparency(_color: str, _alpha: float) -> str:
@@ -490,6 +499,11 @@ def plot_progress(
             x_df[df.columns] = \
                 x_df.index.values[:, np.newaxis] * np.ones(df.shape)
             x_data_dfs[name] = x_df
+    else:
+        assert set(x_data_dfs) == set(y_data_dfs), (
+            f'keys for x_data_dfs and y_data_dfs do not match:\n'
+            f'x_data_dfs keys: {", ".join(x_data_dfs)}\n'
+            f'y_data_dfs keys: {", ".join(y_data_dfs)}')
 
     for i, (name, df) in enumerate(y_data_dfs.items()):
 
@@ -527,14 +541,14 @@ def plot_progress(
                 mean_x, df.quantile(percentiles[0], axis=1),
                 showlegend=False, line_color=line_clr, mode='lines',
                 name=f'{name}-{round(100 * percentiles[0])}%',
-                hoverlabel_namelength=-1,
+                hoverlabel_namelength=-1, hoverinfo='none',
                 legendgroup=name,
             )
             _plot(
                 mean_x, df.quantile(percentiles[1], axis=1),
                 showlegend=False, line_color=line_clr, mode='lines',
                 name=f'{name}-{round(100 * percentiles[1])}%',
-                hoverlabel_namelength=-1,
+                hoverlabel_namelength=-1, hoverinfo='none',
                 fill='tonexty', fillcolor=fill_clr,
                 legendgroup=name,
             )

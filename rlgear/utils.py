@@ -91,6 +91,8 @@ class MetaWriter():
                     patch = _get(['git', 'format-patch', '--stdout', base])
                     base_commit_hash = _get(
                         ['git', 'rev-parse', '--short', base]).strip()
+                    short_commit = _get(
+                        ['git', 'rev-parse', '--short', 'HEAD']).strip()
 
                 # pylint: disable=no-member
                 except (git_exc.InvalidGitRepositoryError,
@@ -107,6 +109,7 @@ class MetaWriter():
 
                     self.git_info[Path(cwd).stem] = {
                         'commit': repo.commit().name_rev,
+                        'commit_short': short_commit,
                         'patch': patch,
                         'patch_fname':
                             f'patch_rel_to_{base_commit_hash}.patch',
@@ -117,7 +120,7 @@ class MetaWriter():
                         'ignore': repo_config.get('ignore', [])
                     }
 
-    # pylint: disable=too-many-locals,too-many-statements
+    # pylint: disable=too-many-locals,too-many-statements, too-many-branches
     def write(self, logdir: str) -> None:
         if self.print_log_dir:
             print(f'log dir: {logdir}')
@@ -165,13 +168,16 @@ class MetaWriter():
                       'w', encoding='UTF-8') as f:
                 f.write(repo_data['commit'])
 
-            diff_file = meta_repo_dir / (repo_name + '_diff.diff')
-            with open(diff_file, 'w', encoding='UTF-8') as f:
-                f.write(repo_data['diff'])
+            if repo_data['diff']:
+                diff_file = meta_repo_dir / (
+                    repo_name + f'_diff_on_{repo_data["commit_short"]}.diff')
+                with open(diff_file, 'w', encoding='UTF-8') as f:
+                    f.write(repo_data['diff'])
 
-            patch_file = meta_repo_dir / repo_data['patch_fname']
-            with open(patch_file, 'w', encoding='UTF-8') as f:
-                f.write(repo_data['patch'])
+            if repo_data['patch']:
+                patch_file = meta_repo_dir / repo_data['patch_fname']
+                with open(patch_file, 'w', encoding='UTF-8') as f:
+                    f.write(repo_data['patch'])
 
             if repo_data['copy_repo']:
                 files = set(sp.check_output(
@@ -183,33 +189,59 @@ class MetaWriter():
                     cwd=str(repo_data['repo_dir'])
                 ).decode('UTF-8').splitlines()  # type: ignore
 
-                files |= {s.split(' ')[1] for s in status_files
-                          if s.startswith('??')}
+                for f_str in status_files:
+                    if f_str.startswith('??'):
+                        # untracked file so add
+                        files.add(f_str.split(' ')[-1])
+                    elif f_str.startswith(' D '):
+                        # deleted file that has not been committed.
+                        # remove from copy list since it does not exist and
+                        # can't be copied
+                        files.remove(f_str.split(' ')[-1])
 
-                for f in files:  # type: ignore
-                    if not (repo_data['repo_dir'] / f / '.git').exists():
-                        out = meta_repo_dir / 'repo' / Path(f)  # type: ignore
+                for f_str in files:  # type: ignore
+                    if not (repo_data['repo_dir'] / f_str / '.git').exists():
+                        out = meta_repo_dir / 'repo' / Path(f_str)
                         out.parent.mkdir(exist_ok=True, parents=True)
                         inp = (repo_data['repo_dir']
-                               / Path(f)).resolve()  # type: ignore
+                               / Path(f_str)).resolve()  # type: ignore
                         shutil.copy2(inp, out)
 
-        msg = ('You can recreate the experiment as follows:\n\n```bash\n'
-               '# checkout code\n')
+        msg = 'You can recreate the experiment as follows:\n\n```bash\n'
 
         for repo_name, repo_data in self.git_info.items():
             d = meta_dir / repo_name
 
+            msg += f'# {repo_name}: '
+            if not repo_data['patch'] and not repo_data['diff']:
+                msg += ('no commits or changes relative to '
+                        f'{repo_data["base_commit_hash"]} so just reset\n')
+            elif not repo_data['patch'] and repo_data['diff']:
+                msg += ('no commits relative to '
+                        f'{repo_data["base_commit_hash"]} so reset and '
+                        'apply the diff\n')
+            elif repo_data['patch'] and not repo_data['diff']:
+                msg += ('commits relative to '
+                        f'{repo_data["base_commit_hash"]} but no diff so '
+                        'reset and apply the patch\n')
+            else:
+                msg += 'reset, apply patch/diff\n'
             msg += f"cd {self._rel_path(repo_data['repo_dir'])}\n"
             msg += f"git reset --hard {repo_data['base_commit_hash']}"
             msg += ("  # probably want to git stash or "
                     "otherwise save before this line\n")
 
-            diff_file_str = self._rel_path(d / (repo_name + '_diff.diff'))
+            diff_file_str = self._rel_path(d / (
+                repo_name + f'_diff_{repo_data["commit_short"]}.diff'))
             patch_file = self._rel_path(d / repo_data['patch_fname'])
 
-            msg += f"git am -3 {patch_file}\n"
-            msg += f"git apply {diff_file_str}\n\n"
+            if repo_data['patch']:
+                msg += f"git am -3 {patch_file}\n"
+
+            if repo_data['diff']:
+                msg += f"git apply {diff_file_str}\n\n"
+            else:
+                msg += '\n'
 
         msg += (
             '# run experiment (see also requirements.txt for dependencies)\n'
@@ -362,7 +394,7 @@ def shorten_dfs(
 
 
 def group_experiments(
-    base_dir: Path,
+    base_dirs: Iterable[Path],
     name_cb: Optional[Callable[[Path], str]] = None,
     exclude_error_experiments: bool = True
 ) -> Dict[str, List[Path]]:
@@ -375,12 +407,17 @@ def group_experiments(
     assert name_cb is not None
 
     # https://stackoverflow.com/a/57594612
-    progress_files = [
-        Path(f) for f in
-        glob.glob(str(base_dir) + '/**/progress.csv', recursive=True)]
+    progress_files = []
+    for d in base_dirs:
+        progress_files += [
+            Path(f) for f in
+            glob.glob(str(d) + '/**/progress.csv', recursive=True)]
 
     out: Dict[str, List[Path]] = collections.defaultdict(list)
     error_files: List[str] = []
+
+    # insert so that the dictionary is sorted according to modified time
+    progress_files = sorted(progress_files, key=lambda p: p.stat().st_mtime)
     for progress_file in progress_files:
         if (progress_file.parent / 'error.txt').exists():
             error_files.append(str(progress_file.parent))
@@ -478,7 +515,7 @@ def plot_progress(
         showlegend=True,
         hovermode='x',
         hoverlabel_bgcolor='rgba(255, 255, 255, 0.5)',
-        font_size=24
+        font_size=24,
     ))
 
     def _make_transparency(_color: str, _alpha: float) -> str:
@@ -513,7 +550,7 @@ def plot_progress(
         df = df[mask]
         mean_x = x_df.mean(axis=1)
 
-        color = colors[i % len(y_data_dfs)]
+        color = colors[i % len(colors)]
 
         _plot(
             mean_x, df.mean(axis=1), name=name, showlegend=True,

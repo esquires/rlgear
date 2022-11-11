@@ -232,7 +232,7 @@ class MetaWriter():
                     "otherwise save before this line\n")
 
             diff_file_str = self._rel_path(d / (
-                repo_name + f'_diff_{repo_data["commit_short"]}.diff'))
+                repo_name + f'_diff_on_{repo_data["commit_short"]}.diff'))
             patch_file = self._rel_path(d / repo_data['patch_fname'])
 
             if repo_data['patch']:
@@ -636,7 +636,10 @@ def smooth(values: Sequence[float], weight: float) -> Sequence[float]:
         if np.isnan(v):
             smoothed.append(smoothed[-1])
         else:
-            smoothed.append(smoothed[-1] * weight + v * (1 - weight))
+            if np.isnan(smoothed[-1]):
+                smoothed.append(v)
+            else:
+                smoothed.append(smoothed[-1] * weight + v * (1 - weight))
 
     return smoothed
 

@@ -178,6 +178,7 @@ def make_rllib_config(
         kwargs['local_dir'] = os.path.join(kwargs['local_dir'], 'debug')
         cfg['num_workers'] = 0
         cfg['num_gpus'] = 0
+        kwargs['max_failures'] = 0
         kwargs['num_samples'] = 1
         if kwargs['verbose'] == 0:
             kwargs['verbose'] = 1

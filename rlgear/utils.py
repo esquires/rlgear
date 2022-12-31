@@ -499,6 +499,7 @@ def plot_progress(
     percentile_alpha: float = 0.1,
     x_data_dfs: Optional[Dict[str, pd.DataFrame]] = None,
     sort_x_vals: bool = True,
+    name_order: Optional[List[str]] = None,
 ) -> go.Figure:
 
     colors = plotly.colors.DEFAULT_PLOTLY_COLORS
@@ -529,9 +530,16 @@ def plot_progress(
 
         return fig.add_trace(go.Scatter(x=_x, y=_y, **_kwargs))
 
+    if name_order is None:
+        name_order = sorted(y_data_dfs)
+
+    assert set(name_order) == set(y_data_dfs), \
+        "name_order keys do not match y_data_dfs"
+
     if x_data_dfs is None:
         x_data_dfs = {}
-        for name, df in y_data_dfs.items():
+        for name in name_order:
+            df = y_data_dfs[name]
             x_df = df.copy()
             x_df[df.columns] = \
                 x_df.index.values[:, np.newaxis] * np.ones(df.shape)
@@ -542,8 +550,8 @@ def plot_progress(
             f'x_data_dfs keys: {", ".join(x_data_dfs)}\n'
             f'y_data_dfs keys: {", ".join(y_data_dfs)}')
 
-    for i, (name, df) in enumerate(y_data_dfs.items()):
-
+    for i, name in enumerate(name_order):
+        df = y_data_dfs[name]
         x_df = x_data_dfs[name]
         mask = ~np.isnan(x_df.mean(axis=1)) & ~np.isnan(df.mean(axis=1))
         x_df = x_df[mask]

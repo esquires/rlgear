@@ -6,6 +6,7 @@ import csv
 import os
 import string
 import random
+import socket
 from typing import Tuple, Any, Iterable, Union, Dict, Set, List
 
 import yaml
@@ -158,7 +159,10 @@ def make_rllib_config(
     meta_writer = MetaWriter(
         repo_roots=params['repos'],
         files=inputs,
-        str_data={'merged_params.yaml': yaml.dump(params)})
+        str_data={
+            'merged_params.yaml': yaml.dump(params),
+            'host.txt': socket.gethostname()
+        })
 
     # provide defaults that can be overriden in the yaml file
     kwargs: dict = {

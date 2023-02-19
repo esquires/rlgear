@@ -11,6 +11,7 @@ from typing import Tuple, Any, Iterable, Union, Dict, Set, List
 
 import yaml
 import numpy as np
+import torch
 
 import ray
 import ray.tune.utils
@@ -268,3 +269,21 @@ def gen_passwd(size: int) -> str:
     # https://stackoverflow.com/a/2257449
     chars = string.ascii_letters + string.digits
     return ''.join(random.SystemRandom().choice(chars) for _ in range(size))
+
+
+def check_nan(x: torch.Tensor, *args: Any, **kwargs: Any) -> None:
+    if not torch.any(torch.isnan(x)) and not torch.any(torch.isinf(x)):
+        return
+
+    msg = f"nan detected. x is {x}\n"
+    if args:
+        msg += "check_nan args are\n"
+        for arg in args:
+            msg += f"{arg}\n"
+
+    if kwargs:
+        msg += "check_nan kwargs are\n"
+        for key, val in kwargs.items():
+            msg += f"{key}: {val}\n"
+
+    raise ValueError(msg)

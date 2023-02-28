@@ -8,8 +8,11 @@ import rlgear
 def test_cartpole() -> None:
     ray.init()
     config_dir = Path(__file__).resolve().parent / 'config'
-    tune_kwargs = rlgear.rllib_utils.make_rllib_config(
-        'test_cartpole.yaml', 'test_cartpole', config_dir, False, {})[1]
+    params, meta_writer, log_dir = rlgear.utils.from_yaml(
+        'test_cartpole.yaml', config_dir, 'test_cartpole')[:3]
+
+    tune_kwargs = rlgear.rllib_utils.make_tune_kwargs(
+        params, meta_writer, log_dir, False)
 
     exp = ray.tune.run(**tune_kwargs)
     trial = exp.get_best_trial('episode_reward_mean', mode='max')

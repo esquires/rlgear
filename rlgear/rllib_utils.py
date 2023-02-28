@@ -1,15 +1,12 @@
 import argparse
-import copy
 import collections
 import re
 import csv
 import os
 import string
 import random
-import socket
-from typing import Tuple, Any, Iterable, Union, Dict, Set, List
+from typing import Any, Union, Dict, Set, List
 
-import yaml
 import numpy as np
 import torch
 
@@ -18,8 +15,7 @@ import ray.tune.utils
 from ray.rllib.evaluation.episode import Episode
 from ray.rllib.evaluation.episode_v2 import EpisodeV2
 
-from .utils import MetaWriter, get_inputs, parse_inputs, get_log_dir, \
-    StrOrPath, dict_str2num, import_class
+from .utils import MetaWriter, StrOrPath, import_class
 
 
 class MetaLoggerCallback(ray.tune.logger.LoggerCallback):
@@ -81,7 +77,7 @@ class CSVFilteredLoggerCallback(ray.tune.logger.csv.CSVLoggerCallback):
     def __init__(self, wait_iterations: int, excludes: List[str]):
         super().__init__()
         self.wait_iterations = wait_iterations
-        self.prior_results: Dict = collections.defaultdict(list)
+        self.prior_results: Dict[Any, Any] = collections.defaultdict(list)
         self.keys: Set[str] = set()
         self.excludes = excludes
 
@@ -142,36 +138,17 @@ def add_rlgear_args(parser: argparse.ArgumentParser) \
 
 
 # pylint: disable=too-many-branches
-def make_rllib_config(
-    yaml_file: StrOrPath,
-    exp_name: str,
-    search_dirs: Union[StrOrPath, Iterable[StrOrPath]],
+def make_tune_kwargs(
+    params: dict[Any, Any],
+    meta_writer: MetaWriter,
+    log_dir: StrOrPath,
     debug: bool,
-    overrides: dict,
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+) -> dict[str, Any]:
+    # for inputs, see rlgear.utils.from_yaml
 
-    inputs = get_inputs(yaml_file, search_dirs)
-    params = dict_str2num(parse_inputs(inputs))
-    # override the non-rllib blocks
-    if overrides is not None:
-        params = ray.tune.utils.merge_dicts(params, overrides)
-
-    # loggers = list(ray.tune.logger.DEFAULT_LOGGERS)
-    meta_writer = MetaWriter(
-        repo_roots=params['repos'],
-        files=inputs,
-        str_data={
-            'merged_params.yaml': yaml.dump(params),
-            'host.txt': socket.gethostname()
-        })
-
-    # provide defaults that can be overriden in the yaml file
-    kwargs: dict = {
-        'config': {
-            "log_level": "INFO",
-        },
-        'local_dir': str(get_log_dir(params['log'], yaml_file, exp_name)),
-        # 'loggers': loggers
+    kwargs: dict[str, Any] = {
+        'config': {"log_level": "INFO"},
+        'local_dir': str(log_dir),
     }
 
     for blk in params['rllib']['tune_kwargs_blocks'].split(','):
@@ -223,9 +200,7 @@ def make_rllib_config(
 
     kwargs['callbacks'].append(MetaLoggerCallback(meta_writer))
 
-    meta_writer.objs_to_pickle = copy.deepcopy(kwargs)  # type: ignore
-
-    return params, kwargs
+    return kwargs
 
 
 # pylint: disable=unused-argument
@@ -235,7 +210,7 @@ def dirname_creator(trial: ray.tune.experiment.Trial) -> str:
 
 class InfoToCustomMetricsCallback(
         ray.rllib.algorithms.callbacks.DefaultCallbacks):
-    # pylint: disable=arguments-differ,no-self-use
+    # pylint: disable=arguments-differ
     def on_episode_end(
         self,
         *_: Any,

@@ -1,4 +1,5 @@
 import sys
+import socket
 import collections
 import os
 import glob
@@ -289,9 +290,9 @@ def find_filepath(
 
 
 def get_inputs(
-        yaml_file: StrOrPath,
-        search_dirs: Union[StrOrPath, Iterable[StrOrPath]]) \
-        -> List[Path]:
+    yaml_file: StrOrPath,
+    search_dirs: Union[StrOrPath, Iterable[StrOrPath]]
+) -> list[Path]:
 
     inputs = []
 
@@ -313,9 +314,9 @@ def get_inputs(
     return inputs
 
 
-def parse_inputs(inputs: Sequence[StrOrPath]) -> dict:
+def parse_inputs(inputs: Sequence[StrOrPath]) -> dict[Any, Any]:
 
-    out: dict = {}
+    out: dict[Any, Any] = {}
     for inp in inputs:
         with open(inp, 'r', encoding='UTF-8') as f:
             params = yaml.safe_load(f)
@@ -334,7 +335,7 @@ def parse_inputs(inputs: Sequence[StrOrPath]) -> dict:
     return out
 
 
-def dict_str2num(d: dict) -> dict:
+def dict_str2num(d: dict[Any, Any]) -> dict[Any, Any]:
 
     keys = list(d.keys())  # copy
     for k in keys:
@@ -347,6 +348,26 @@ def dict_str2num(d: dict) -> dict:
                 d[k] = dict_str2num(v)
 
     return d
+
+
+def from_yaml(
+    yaml_file: StrOrPath,
+    search_dirs: StrOrPath | Iterable[StrOrPath],
+    exp_name: str,
+) -> tuple[dict[Any, Any], MetaWriter, Path, list[Path]]:
+    inputs = get_inputs(yaml_file, search_dirs)
+    params = dict_str2num(parse_inputs(inputs))
+    meta_writer = MetaWriter(
+        repo_roots=params['repos'],
+        files=inputs,
+        str_data={
+            'params.yaml': yaml.dump(params),
+            'host.txt': socket.gethostname()
+        }
+    )
+
+    log_dir = get_log_dir(params['log'], yaml_file, exp_name)
+    return params, meta_writer, log_dir, inputs
 
 
 def get_latest_checkpoint(ckpt_root_dir: str) -> str:
@@ -652,7 +673,7 @@ def smooth(values: Sequence[float], weight: float) -> Sequence[float]:
     return smoothed
 
 
-def add_to_dict(overrides: dict, keys: List[str], val: Any) -> None:
+def add_to_dict(overrides: dict[str, Any], keys: list[str], val: Any) -> None:
     d = overrides
     for key in keys[:-1]:
         try:
@@ -676,14 +697,17 @@ def interp(x: T, x_low: Any, x_high: Any, y_low: Any, y_high: Any) -> T:
 
 
 class GymLegacyAPIWrapper(gym.Wrapper):
-    def step(self, action: Any) -> Tuple[Any, float, bool, Dict[Any, Any]]:
+    def step(  # type: ignore
+        self,
+        action: Any
+    ) -> Tuple[Any, float, bool, Dict[Any, Any]]:
         out = self.env.step(action)
 
         if len(out) == 5:
             obs, rew, terminated, truncated, info = out  # type: ignore
             done = terminated or truncated  # type: ignore
         else:
-            obs, rew, done, info = out
+            obs, rew, done, info = out  # type: ignore
 
         return obs, rew, done, info
 

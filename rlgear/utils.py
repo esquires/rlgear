@@ -673,18 +673,6 @@ def smooth(values: Sequence[float], weight: float) -> Sequence[float]:
     return smoothed
 
 
-def add_to_dict(overrides: dict[str, Any], keys: list[str], val: Any) -> None:
-    d = overrides
-    for key in keys[:-1]:
-        try:
-            d = d[key]
-        except KeyError:
-            d[key] = {}
-            d = d[key]
-
-    d[keys[-1]] = val
-
-
 T = TypeVar('T')
 
 

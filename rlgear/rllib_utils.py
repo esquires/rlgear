@@ -132,7 +132,6 @@ def add_rlgear_args(parser: argparse.ArgumentParser) \
         -> argparse.ArgumentParser:
     parser.add_argument('yaml_file')
     parser.add_argument('exp_name')
-    parser.add_argument('--overrides')
     parser.add_argument('--debug', action='store_true')
     return parser
 
@@ -246,18 +245,31 @@ def gen_passwd(size: int) -> str:
     return ''.join(random.SystemRandom().choice(chars) for _ in range(size))
 
 
-def check_nan(x: torch.Tensor, *args: Any, **kwargs: Any) -> None:
-    if not torch.any(torch.isnan(x)) and not torch.any(torch.isinf(x)):
+def check(
+    x: torch.Tensor,
+    *args: Any,
+    lim: float = 1.0e7,
+    **kwargs: Any
+) -> None:
+
+    failed = torch.any(torch.isnan(x))
+    isinf = torch.any(torch.isinf(x))
+    if np.isinf(lim):
+        failed |= isinf
+    else:
+        failed |= isinf or torch.any(torch.abs(x) >= lim)
+
+    if not failed:
         return
 
-    msg = f"nan detected. x is {x}\n"
+    msg = f"check failed with limit {lim}. x is {x}\n"
     if args:
-        msg += "check_nan args are\n"
+        msg += "check args are\n"
         for arg in args:
             msg += f"{arg}\n"
 
     if kwargs:
-        msg += "check_nan kwargs are\n"
+        msg += "check kwargs are\n"
         for key, val in kwargs.items():
             msg += f"{key}: {val}\n"
 

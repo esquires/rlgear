@@ -5,6 +5,7 @@ import os
 import glob
 import re
 import difflib
+import time
 import importlib
 import pickle
 import copy
@@ -181,36 +182,64 @@ class MetaWriter():
                     f.write(repo_data['patch'])
 
             if repo_data['copy_repo']:
+                self._copy_repo(repo_data['repo_dir'], meta_repo_dir)
+
+        self._create_readme(self.git_info, meta_dir, self.cmd, self.orig_dir)
+
+    @staticmethod
+    def _copy_repo(repo_dir: Path, meta_repo_dir: Path) -> None:
+        ct = 0
+        max_tries = 10
+
+        while ct < max_tries:
+            # the subprocess calls can fail when other jobs are simultaneously
+            # calling so try a few times after a delay. If it still can't do
+            # the subprocess call then exit
+            try:
                 files = set(sp.check_output(
-                    ['git', 'ls-files'], cwd=str(repo_data['repo_dir'])
-                ).decode('UTF-8').splitlines())  # type: ignore
+                    ['git', 'ls-files'], cwd=str(repo_dir)
+                ).decode('UTF-8').splitlines())
 
                 status_files = sp.check_output(
                     ['git', 'status', '-s', '--untracked-files=all'],
-                    cwd=str(repo_data['repo_dir'])
-                ).decode('UTF-8').splitlines()  # type: ignore
+                    cwd=str(repo_dir)
+                ).decode('UTF-8').splitlines()
+                break
+            except sp.CalledProcessError:
+                time.sleep(1)
 
-                for f_str in status_files:
-                    if f_str.startswith('??'):
-                        # untracked file so add
-                        files.add(f_str.split(' ')[-1])
-                    elif f_str.startswith(' D '):
-                        # deleted file that has not been committed.
-                        # remove from copy list since it does not exist and
-                        # can't be copied
-                        files.remove(f_str.split(' ')[-1])
+        if ct == max_tries:
+            print(f'could not determine files for {repo_dir}')
+            return
 
-                for f_str in files:  # type: ignore
-                    if not (repo_data['repo_dir'] / f_str / '.git').exists():
-                        out = meta_repo_dir / 'repo' / Path(f_str)
-                        out.parent.mkdir(exist_ok=True, parents=True)
-                        inp = (repo_data['repo_dir']
-                               / Path(f_str)).resolve()  # type: ignore
-                        shutil.copy2(inp, out)
+        for f_str in status_files:
+            if f_str.startswith('??'):
+                # untracked file so add
+                files.add(f_str.split(' ')[-1])
+            elif f_str.startswith(' D '):
+                # deleted file that has not been committed.
+                # remove from copy list since it does not exist and
+                # can't be copied
+                files.remove(f_str.split(' ')[-1])
 
+        for f_str in files:
+            is_submodule = (repo_dir / f_str / '.git').exists()
+            if not is_submodule:
+                out = meta_repo_dir / 'repo' / Path(f_str)
+                out.parent.mkdir(exist_ok=True, parents=True)
+                inp = (repo_dir / Path(f_str)).resolve()
+                shutil.copy2(inp, out)
+
+    @staticmethod
+    def _create_readme(
+        git_info: Dict[str, Any],
+        meta_dir: Path,
+        cmd: str,
+        orig_dir: Path,
+    ) -> None:
         msg = 'You can recreate the experiment as follows:\n\n```bash\n'
 
-        for repo_name, repo_data in self.git_info.items():
+        for repo_name, repo_data in git_info.items():
             d = meta_dir / repo_name
 
             msg += f'# {repo_name}: '
@@ -227,14 +256,14 @@ class MetaWriter():
                         'reset and apply the patch\n')
             else:
                 msg += 'reset, apply patch/diff\n'
-            msg += f"cd {self._rel_path(repo_data['repo_dir'])}\n"
+            msg += f"cd {MetaWriter._rel_path(repo_data['repo_dir'])}\n"
             msg += f"git reset --hard {repo_data['base_commit_hash']}"
             msg += ("  # probably want to git stash or "
                     "otherwise save before this line\n")
 
-            diff_file_str = self._rel_path(d / (
+            diff_file_str = MetaWriter._rel_path(d / (
                 repo_name + f'_diff_on_{repo_data["commit_short"]}.diff'))
-            patch_file = self._rel_path(d / repo_data['patch_fname'])
+            patch_file = MetaWriter._rel_path(d / repo_data['patch_fname'])
 
             if repo_data['patch']:
                 msg += f"git am -3 {patch_file}\n"
@@ -246,8 +275,8 @@ class MetaWriter():
 
         msg += (
             '# run experiment (see also requirements.txt for dependencies)\n'
-            f'cd {self._rel_path(self.orig_dir)}\n'
-            f'{self.cmd}\n')
+            f'cd {MetaWriter._rel_path(orig_dir)}\n'
+            f'{cmd}\n')
         msg += '```'
 
         with open(meta_dir / 'README.md', 'w', encoding='UTF-8') as f:

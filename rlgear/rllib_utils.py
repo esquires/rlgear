@@ -83,7 +83,7 @@ class CSVFilteredLoggerCallback(ray.tune.logger.csv.CSVLoggerCallback):
 
     def log_trial_result(
         self,
-        iteration: int,
+        iteration: int,  # pylint: disable=unused-argument
         trial: ray.tune.experiment.trial.Trial,
         result: Dict[str, Any]
     ) -> None:
@@ -209,7 +209,7 @@ def dirname_creator(trial: ray.tune.experiment.Trial) -> str:
 
 class InfoToCustomMetricsCallback(
         ray.rllib.algorithms.callbacks.DefaultCallbacks):
-    # pylint: disable=arguments-differ
+    # pylint: disable=arguments-differ,no-self-use
     def on_episode_end(
         self,
         *_: Any,

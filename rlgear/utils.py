@@ -2,7 +2,6 @@ import sys
 import socket
 import collections
 import os
-import glob
 import re
 import difflib
 import time
@@ -238,8 +237,8 @@ class MetaWriter():
         ----------
         logdir : str
             where to log the data
-        """
 
+        """
         if self.print_log_dir:
             print(f'log dir: {logdir}')
 
@@ -430,8 +429,8 @@ def find_filepath(
     -------
     path : pathlib.Path
         the path to the filename
-    """
 
+    """
     fname_path = Path(fname)
     if fname_path.exists():
         # absolute path or relative
@@ -490,8 +489,8 @@ def get_inputs(
     yaml_files : list[pathlib.Path]
         list of yaml files that should be recursively read when parsing
         (see :func:`parse_inputs`)
-    """
 
+    """
     inputs = []
 
     def _get_inputs(fname: StrOrPath) -> None:
@@ -525,8 +524,8 @@ def parse_inputs(yaml_files: Iterable[StrOrPath]) -> dict[Any, Any]:
     ----------
     yaml_files : list[Path]
         list of yaml files to parse.
-    """
 
+    """
     out: dict[Any, Any] = {}
     for inp in yaml_files:
         with open(inp, 'r', encoding='UTF-8') as f:
@@ -547,8 +546,7 @@ def parse_inputs(yaml_files: Iterable[StrOrPath]) -> dict[Any, Any]:
 
 
 def dict_str2num(d: dict[Any, Any]) -> dict[Any, Any]:
-    """Given a dictionary, recursively convert strings to numbers. """
-
+    """Given a dictionary, recursively convert strings to numbers."""
     keys = list(d.keys())  # copy
     for k in keys:
         v = d[k]
@@ -567,7 +565,7 @@ def from_yaml(
     search_dirs: StrOrPath | Iterable[StrOrPath],
     exp_name: str,
 ) -> tuple[dict[Any, Any], MetaWriter, Path, list[Path]]:
-    """Helper function to convert a yaml_file into a dict.
+    """Convert a yaml_file into a dict.
 
     Parameters
     ----------
@@ -592,8 +590,8 @@ def from_yaml(
         yaml_file
     inputs : list[Path]
         the input yaml files used to create the parameters
-    """
 
+    """
     inputs = get_inputs(yaml_file, search_dirs)
     params = dict_str2num(parse_inputs(inputs))
     meta_writer = MetaWriter(
@@ -624,6 +622,7 @@ def get_latest_checkpoint(ckpt_root_dir: StrOrPath) -> str:
     -------
     ckpt_dir : str
         path to the directory containing the latest checkpoint
+
     """
     ckpts = [str(c) for c in Path(ckpt_root_dir).rglob('*checkpoint-*')
              if 'meta' not in str(c)]
@@ -637,7 +636,7 @@ def group_experiments(
     name_cb: Optional[Callable[[Path], str]] = None,
     exclude_error_experiments: bool = True
 ) -> Dict[str, List[Path]]:
-    """Create dict from experiment name to a list of individual experiment dirs
+    """Create dict with key (exp name), value (list of indiv experiment dirs).
 
     ``name_cb`` provides a key for where to place each progress.csv into a
     dictionary. By default, ``name_cb`` returns the experiment name the common
@@ -680,8 +679,8 @@ def group_experiments(
             ],
         }
 
-    see also:
-
+    See Also
+    --------
     * :func:`get_progress`: convert this function output to dataframes
     * :func:`plot_progress`: create plotly figure from output of `get_progress`
 
@@ -698,6 +697,22 @@ def group_experiments(
       fig.show()
 
     """
+    def _get_progress_files(_base_dir: Path, _out: list[Path]) -> None:
+        # this is faster than
+        # glob.glob(str(_base_dir) + '/**/progress.csv', recursive=True)
+        # since once we find a progress.csv file we can stop searching
+        # that tree
+
+        _dirs = []
+        for _child in _base_dir.iterdir():
+            if _child.name == 'progress.csv':
+                _out.append(_child)
+                return
+            elif _child.is_dir():
+                _dirs.append(_child)
+
+        for _dir in _dirs:
+            _get_progress_files(_dir, _out)
 
     if name_cb is None:
 
@@ -707,12 +722,9 @@ def group_experiments(
 
     assert name_cb is not None
 
-    # https://stackoverflow.com/a/57594612
-    progress_files = []
+    progress_files: List[Path] = []
     for d in base_dirs:
-        progress_files += [
-            Path(f) for f in
-            glob.glob(str(d) + '/**/progress.csv', recursive=True)]
+        _get_progress_files(d, progress_files)
 
     out: Dict[str, List[Path]] = collections.defaultdict(list)
     error_files: List[str] = []
@@ -773,7 +785,6 @@ def get_progress(
         names will by default be ``["00000", "00001"]``
 
     """
-
     def _print_suggestions(_word: str, _possibilities: List[str]) -> None:
         _suggestions = difflib.get_close_matches(_word, _possibilities)
 
@@ -868,19 +879,23 @@ def plot_progress(
         when a DataFrame has more than one column, this function will plot
         the mean. Setting ``plot_indiv`` will show the individual columns
         as well
-    indiv_alph : float, default 0.2
+    indiv_alpha : float, default 0.2
         when ``plot_indiv`` is set, this sets the alpha of the individual lines
     percentiles : Tuple[float, float], optional
         what percentiles to show (low, high)
+    percentile_alpha : float, default 0.2
+        when ``percentiles`` is set, this sets the alpha of the percentile \
+        lines
     x_data_dfs : Dict[str, pandas.DataFrame]
         a provided x axis for each of the lines
+    sort_x_vals : bool, default = True
+        whether to sort the x values in the plots
 
     Returns
     -------
     fig : plotly.graph_objects.Figure
 
     """
-
     colors = plotly.colors.DEFAULT_PLOTLY_COLORS
 
     assert 0 <= indiv_alpha <= 1
@@ -1036,13 +1051,13 @@ def smooth(values: Sequence[float], weight: float) -> Sequence[float]:
     """Apply exponential filter to sequence.
 
     Parameters
-    ---------
+    ----------
     values : Sequence[float]
         values to be filtered
     weight : float
         weight for the filter
-    """
 
+    """
     smoothed = []
     smoothed.append(values[0])
     for v in values[1:]:
@@ -1061,7 +1076,7 @@ T = TypeVar('T')
 
 
 def interp(x: T, x_low: Any, x_high: Any, y_low: Any, y_high: Any) -> T:
-    """Linear interpolation"""
+    """Linear interpolation."""
     if x_low == x_high:
         return y_low
     else:

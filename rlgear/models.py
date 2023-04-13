@@ -23,7 +23,7 @@ def xavier_init(m: nn.Module) -> None:
 
 
 def init_modules(modules: Iterable[nn.Module]) -> None:
-    """Set module to cuda if cuda is available and use xavier initialization"""
+    """Set module to cuda if available and use xavier initialization."""
     for m in modules:
         if torch.cuda.is_available():
             m.cuda()

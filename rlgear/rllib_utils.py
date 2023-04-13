@@ -19,12 +19,12 @@ from .utils import MetaWriter, StrOrPath, import_class
 
 
 class MetaLoggerCallback(ray.tune.logger.LoggerCallback):
-    """Wraps :class:`rlgear.utils.MetaWriter` for use with \
-       :class:`ray.tune.logger.LoggerCallback`
+    """Wrap :class:`rlgear.utils.MetaWriter`.
+
+    For use with :class:`ray.tune.logger.LoggerCallback`
 
     Example
     -------
-
     .. code-block:: python
 
         ray.tune.run(
@@ -33,6 +33,7 @@ class MetaLoggerCallback(ray.tune.logger.LoggerCallback):
         )
 
     """
+
     def __init__(self, meta_writer: MetaWriter):
         self.meta_writer = meta_writer
 
@@ -41,8 +42,7 @@ class MetaLoggerCallback(ray.tune.logger.LoggerCallback):
 
 
 class Filter:
-    """Helper class for filtering extra \
-        :class:`ray.tune.logger.LoggerCallback` outputs
+    """Filter extra :class:`ray.tune.logger.LoggerCallback` outputs.
 
     Parameters
     ----------
@@ -68,8 +68,9 @@ class Filter:
 
 class TBXFilteredLoggerCallback(
             ray.tune.logger.tensorboardx.TBXLoggerCallback):
-    """Wrapper around :class:`ray.tune.logger.tensorboardx.TBXLoggerCallback` \
-        that reduces the output based on the provided :func:`Filter`.
+    """Wrap :class:`ray.tune.logger.tensorboardx.TBXLoggerCallback`.
+
+    Reduces the output based on the provided :func:`Filter`.
     """
 
     def __init__(self, filt: Filter):
@@ -86,9 +87,11 @@ class TBXFilteredLoggerCallback(
 
 
 class JsonFiltredLoggerCallback(ray.tune.logger.json.JsonLoggerCallback):
-    """Wrapper around :class:`ray.tune.logger.json.JsonLoggerCallback` \
-        that reduces the output based on the provided :func:`Filter`.
+    """Wrap :class:`ray.tune.logger.json.JsonLoggerCallback`.
+
+    Reduces the output based on the provided :func:`Filter`.
     """
+
     def __init__(self, filt: Filter):
         super().__init__()
         self.filt = filt
@@ -291,8 +294,7 @@ def check(
     lim: float = 1.0e7,
     **kwargs: Any
 ) -> None:
-    """Raises :py:exc:`ValueError` when ``|x|`` has any large or ``nan`` \
-       entries.
+    """Raise :py:exc:`ValueError` if ``|x|`` has large or ``nan`` entries.
 
     Parameters
     ----------
@@ -305,8 +307,8 @@ def check(
         value that defines whether ``|x|`` is large
     kwargs : Any
         these will be printed out in ``|x|`` is large or has ``nan`` values
-    """
 
+    """
     failed = torch.any(torch.isnan(x))
     isinf = torch.any(torch.isinf(x))
     if np.isinf(lim):

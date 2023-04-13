@@ -31,24 +31,126 @@ StrOrPath = Union[str, Path]
 
 # pylint: disable=too-many-instance-attributes,too-many-arguments
 class MetaWriter():
+    """Log information required to recreate a run of software.
+
+    Parameters
+    ----------
+    repo_roots : dict, optional
+        key: path to a repo (absolute or relative to Path.cwd())
+        value: dict defining a configuration with the following keys
+
+        - base_commit: maps to a sha, branch or tag in the repo
+        - check_clean: throw assertion error if the index has changes
+        - copy_repo: whether to copy all files not in ``.gitignore`` to
+          ``meta/repo_name/repo``
+
+    files : array_like, optional
+        files to copy to meta directory.
+    dirs : array_like, optional
+        directories to copy to the meta/dirs directory
+    ignore_patterns : str, optional
+        :func:`shutil.ignore_patterns` regex used to ignore items
+        (e.g. large files) found in dirs
+    str_data : dict, optional
+        key: filename to show up under meta directory
+        value: text to show up within the file
+    objs_to_pickle : dict, optional
+        key: filename to show up under meta directory
+        value: pickleable object picked into the file
+    print_log_dir : bool, default: True
+        whether to print the log directory. When used with tune.run,
+        the user does not know the log directory when the experiment
+        is initiated so this can signal where the logging is occurring.
+    symlink_dir: str, default: '.'
+        where to create a "latest" symlink to the log directory
+
+    Example
+    -------
+
+    Suppose you have a git repo called ``your_repo_name``
+    that looks like this::
+
+        file0.py
+        my_dir
+        ├── file1.py
+        ├── file2.yaml
+        └── file3.cpp
+
+    where ``foo.py`` has the following contents:
+
+    .. code-block:: python
+      :linenos:
+
+      import tempfile
+      import rlgear.utils
+      out_dir = tempfile.mkdtemp(prefix='rlgear-')
+      my_var = 3
+      writer = rlgear.utils.MetaWriter(
+          repo_roots={
+              '.': {
+                  'base_commit': 'origin/master',
+                  'check_clean': False,
+                  'copy_repo': True
+              }
+          },
+          files=[__file__],
+          dirs=['my_dir'],
+          ignore_patterns='*.cpp'
+          str_data={'extra_info.txt': 'an extra bit of data'},
+          objs_to_pickle={'objects.p': my_var},
+      )
+      writer.write(out_dir)
+
+    Running ``python foo.py`` will result in
+    the creation a temporary directory ``/tmp/rlgear-randomChars`` with
+    a ``meta`` subdirectory. In parenthesis is the relevant constructor
+    argument that causes the associated output. In addition there will be
+    a softlink called ``latest`` that points to
+    ``/tmp/rlgear/rlgear-randomChars``.
+
+    - These files are always produced \
+      (i.e., with ``writer = rlgear.utils.MetaWriter()`` below)
+        - ``args.txt``: contains command line argument \
+          (in this case ``python foo.py``)
+        - ``requirements.txt``: output of ``pip freeze``
+    - ``repo_root``
+        - ``README.md``: a description of how to recreate the repo with saved \
+            patches, git diff, and commit information
+        - ``your_repo_name``: directory containing a patch, diff, commit, \
+            and a full copy of the repo you ran the code from (from the \
+            ``repo_roots`` argument)
+    - ``files``: ``foo.py`` which is a copy of the ``foo.py`` in your repo
+    - ``dirs`` and ``ignore_patterns``: \
+        directory called ``my_dir`` containing files ``file1.py`` and \
+        ``file2.yaml`` (not ``file3.cpp`` given the ``ignore_patterns``)
+    - ``str_data``: ``extra_info.txt`` containing the string "an extra bit \
+        of data"
+    - ``objs_to_pickle``: ``objects.p`` that contains a python float with \
+        value 3
+
+    """
 
     # pylint: disable=too-many-locals
     def __init__(
-            self,
-            repo_roots: Dict[str, Dict[str, Any]],
-            files: Optional[Iterable[StrOrPath]] = None,
-            dirs: Optional[Iterable[StrOrPath]] = None,
-            ignore_patterns: Optional[Iterable[str]] = None,
-            str_data: Optional[Dict[str, str]] = None,
-            objs_to_pickle: Optional[List[Any]] = None,
-            print_log_dir: bool = True,
-            symlink_dir: Optional[str] = "."):
+        self,
+        repo_roots: Optional[Dict[str, Dict[str, Any]]] = None,
+        files: Optional[Iterable[StrOrPath]] = None,
+        dirs: Optional[Iterable[StrOrPath]] = None,
+        ignore_patterns: Optional[Iterable[str]] = None,
+        str_data: Optional[Dict[str, str]] = None,
+        objs_to_pickle: Optional[Dict[str, Any]] = None,
+        print_log_dir: bool = True,
+        symlink_dir: Optional[str] = "."
+    ):
 
+        self.repo_roots = {} if repo_roots is None else repo_roots
         self.files = [Path(f).absolute() for f in files] if files else []
         self.dirs = [Path(d).absolute() for d in dirs] if dirs else []
-        self.ignore_patterns = ignore_patterns
+        self.ignore_patterns = [ignore_patterns] \
+            if isinstance(ignore_patterns, str) else ignore_patterns
         self.str_data = str_data or {}
-        self.objs_to_pickle = objs_to_pickle
+        self.objs_to_pickle = \
+            objs_to_pickle if objs_to_pickle is not None else {}
         self.print_log_dir = print_log_dir
         self.symlink_dir = \
             Path(symlink_dir).expanduser() if symlink_dir else None
@@ -73,7 +175,7 @@ class MetaWriter():
             # Trying to read deleted variable "exc"
             git_exc: Any = git.exc  # type: ignore
 
-            for repo_root, repo_config in repo_roots.items():
+            for repo_root, repo_config in self.repo_roots.items():
 
                 try:
                     repo = git.Repo(repo_root, search_parent_directories=True)
@@ -123,7 +225,21 @@ class MetaWriter():
                     }
 
     # pylint: disable=too-many-locals,too-many-statements, too-many-branches
-    def write(self, logdir: str) -> None:
+    def write(self, logdir: StrOrPath) -> None:
+        """Create meta subdirectory and save data.
+
+        This method is separated from the constructor for compatibility
+        with the
+        `ray.tune.logger.LoggerCallback
+        <https://github.com/ray-project/ray/blob/master/python/ray/tune/logger/logger.py>`_
+        interface.
+
+        Parameters
+        ----------
+        logdir : str
+            where to log the data
+        """
+
         if self.print_log_dir:
             print(f'log dir: {logdir}')
 
@@ -143,18 +259,20 @@ class MetaWriter():
             with open(meta_dir / fname_str, 'w', encoding='UTF-8') as f:
                 f.write(data)
 
-        if self.objs_to_pickle:
-            with open(meta_dir / 'objs_to_pickle.p', 'wb') as fp:
-                pickle.dump(self.objs_to_pickle, fp)
+        for fname_str, data in self.objs_to_pickle.items():
+            with open(meta_dir / fname_str, 'wb') as fp:
+                pickle.dump(data, fp)
 
         for fname in self.files:
             shutil.copy2(fname, meta_dir)
 
-        (meta_dir / 'dirs').mkdir(exist_ok=True)
-        ignore = shutil.ignore_patterns(*self.ignore_patterns) \
-            if self.ignore_patterns else None
-        for d in self.dirs:
-            shutil.copytree(d, meta_dir / 'dirs' / d.name, ignore=ignore)
+        if self.dirs:
+            (meta_dir / 'dirs').mkdir(exist_ok=True)
+            ignore = shutil.ignore_patterns(*self.ignore_patterns) \
+                if self.ignore_patterns else None
+            for d in self.dirs:
+                shutil.copytree(
+                    d, meta_dir / 'dirs' / d.name, ignore=ignore)
 
         with open(meta_dir / 'args.txt', 'w', encoding='UTF-8') as f:
             f.write(self.cmd)
@@ -184,7 +302,9 @@ class MetaWriter():
             if repo_data['copy_repo']:
                 self._copy_repo(repo_data['repo_dir'], meta_repo_dir)
 
-        self._create_readme(self.git_info, meta_dir, self.cmd, self.orig_dir)
+        if self.git_info:
+            self._create_readme(
+                self.git_info, meta_dir, self.cmd, self.orig_dir)
 
     @staticmethod
     def _copy_repo(repo_dir: Path, meta_repo_dir: Path) -> None:
@@ -292,9 +412,26 @@ class MetaWriter():
 
 
 def find_filepath(
-        fname: StrOrPath,
-        search_dirs: Union[StrOrPath, Iterable[StrOrPath]]) \
-        -> Path:
+    fname: StrOrPath,
+    search_dirs: Union[StrOrPath, Iterable[StrOrPath]]
+) -> Path:
+    """Return first path with fname under search_dirs.
+
+    Raises :py:exc:`StopIteration` if ``fname`` is not found.
+
+    Parameters
+    ----------
+    fname : str or pathlib.Path
+        the filename to look for
+    search_dirs : iterable of Paths
+        the directories to search
+
+    Returns
+    -------
+    path : pathlib.Path
+        the path to the filename
+    """
+
     fname_path = Path(fname)
     if fname_path.exists():
         # absolute path or relative
@@ -322,6 +459,38 @@ def get_inputs(
     yaml_file: StrOrPath,
     search_dirs: Union[StrOrPath, Iterable[StrOrPath]]
 ) -> list[Path]:
+    """Recursively find inputs in a yaml_file.
+
+    Example
+    -------
+
+    Suppose yaml_1, yaml_2, and yaml_3 files have the following content
+
+    .. code-block:: yaml
+
+        __inputs__: [yaml_2, yaml_3]  # yaml_1
+        __inputs__: [yaml_4]  # yaml_2
+        __inputs__: [yaml_5]  # yaml_3
+
+    Then ``get_inputs("yaml_1", search_dirs)`` will return
+
+    .. code-block:: python
+
+        ['yaml_4', 'yaml_2', 'yaml_5', 'yaml_3', 'yaml_1']
+
+    Parameters
+    ----------
+    yaml_file : pathlib.Path
+        path to the top level yaml file
+    search_dirs : StrOrPath
+        the directories to search
+
+    Returns
+    -------
+    yaml_files : list[pathlib.Path]
+        list of yaml files that should be recursively read when parsing
+        (see :func:`parse_inputs`)
+    """
 
     inputs = []
 
@@ -330,23 +499,36 @@ def get_inputs(
         with open(filepath, 'r', encoding='UTF-8') as f:
             params = yaml.safe_load(f)
 
-        temp_inputs = params.get('__inputs__', [])
-        if isinstance(temp_inputs, str):
-            temp_inputs = [temp_inputs]
+        if params is not None:
+            temp_inputs = params.get('__inputs__', [])
 
-        for inp in temp_inputs:
-            _get_inputs(inp)
+            if isinstance(temp_inputs, str):
+                temp_inputs = [temp_inputs]
 
-        inputs.append(filepath)
+            for inp in temp_inputs:
+                _get_inputs(inp)
+
+            inputs.append(filepath)
 
     _get_inputs(yaml_file)
     return inputs
 
 
-def parse_inputs(inputs: Sequence[StrOrPath]) -> dict[Any, Any]:
+def parse_inputs(yaml_files: Iterable[StrOrPath]) -> dict[Any, Any]:
+    """Return a dictionary from a list of yaml files.
+
+    This is a wrapper around yaml.safe_load that merges multiple yaml file
+    values. When multiple yaml files set the same value the latter takes
+    precedence. see also :func:`get_inputs`
+
+    Parameters
+    ----------
+    yaml_files : list[Path]
+        list of yaml files to parse.
+    """
 
     out: dict[Any, Any] = {}
-    for inp in inputs:
+    for inp in yaml_files:
         with open(inp, 'r', encoding='UTF-8') as f:
             params = yaml.safe_load(f)
 
@@ -365,6 +547,7 @@ def parse_inputs(inputs: Sequence[StrOrPath]) -> dict[Any, Any]:
 
 
 def dict_str2num(d: dict[Any, Any]) -> dict[Any, Any]:
+    """Given a dictionary, recursively convert strings to numbers. """
 
     keys = list(d.keys())  # copy
     for k in keys:
@@ -384,10 +567,37 @@ def from_yaml(
     search_dirs: StrOrPath | Iterable[StrOrPath],
     exp_name: str,
 ) -> tuple[dict[Any, Any], MetaWriter, Path, list[Path]]:
+    """Helper function to convert a yaml_file into a dict.
+
+    Parameters
+    ----------
+    yaml_file : StrOrPath
+        see :func:`get_inputs`
+    search_dirs : StrOrPath | Iterable[StrOrPath]
+        see :func:`get_inputs`
+    exp_name : str
+        used to create a string that can be used as a log directory
+
+    Returns
+    -------
+    params : dict
+        parameters from the yaml_file after recursively looking in files
+        listed under __inputs__ (see :func:`get_inputs` and
+        :func:`parse_inputs`)
+    meta_writer : MetaWriter
+        an initial version of a meta writer with information from the yaml_file
+    log_dir : Path
+        `prefix / exp_group / yaml_fname / exp_name`
+        where prefix and exp_group are found under the log section of the
+        yaml_file
+    inputs : list[Path]
+        the input yaml files used to create the parameters
+    """
+
     inputs = get_inputs(yaml_file, search_dirs)
     params = dict_str2num(parse_inputs(inputs))
     meta_writer = MetaWriter(
-        repo_roots=params['repos'],
+        repo_roots=params['log']['repos'],
         files=inputs,
         str_data={
             'params.yaml': yaml.dump(params),
@@ -395,11 +605,26 @@ def from_yaml(
         }
     )
 
-    log_dir = get_log_dir(params['log'], yaml_file, exp_name)
+    prefix = next((Path(d).expanduser() for d in params['log']['prefixes']
+                   if Path(d).expanduser().is_dir()))
+    log_dir = \
+        prefix / params['log']['exp_group'] / Path(yaml_file).stem / exp_name
     return params, meta_writer, log_dir, inputs
 
 
-def get_latest_checkpoint(ckpt_root_dir: str) -> str:
+def get_latest_checkpoint(ckpt_root_dir: StrOrPath) -> str:
+    """Return the latest checkpoint subdirectory given a root directory.
+
+    Parameters
+    ----------
+    ckpt_root_dir : StrOrPath
+        root directory to search (e.g. the log directory from tune)
+
+    Returns
+    -------
+    ckpt_dir : str
+        path to the directory containing the latest checkpoint
+    """
     ckpts = [str(c) for c in Path(ckpt_root_dir).rglob('*checkpoint-*')
              if 'meta' not in str(c)]
     r = re.compile(r'checkpoint_(\d+)')
@@ -407,52 +632,78 @@ def get_latest_checkpoint(ckpt_root_dir: str) -> str:
     return ckpts[np.argmax(ckpt_nums)]
 
 
-def get_log_dir(log_params: Dict[str, str],
-                yaml_fname: StrOrPath,
-                exp_name: str) \
-        -> Path:
-    prefix = next((Path(d).expanduser() for d in log_params['prefixes']
-                   if Path(d).expanduser().is_dir()))
-    return prefix / log_params['exp_group'] / Path(yaml_fname).stem / exp_name
-
-
-def merge_dfs(
-    dfs: Sequence[pd.DataFrame],
-    names: Optional[Sequence[str]] = None
-) -> pd.DataFrame:
-
-    df = dfs[0]
-    if len(dfs) > 1:
-        for i, _df in enumerate(dfs[1:]):
-            df = df.join(_df, how='outer', rsuffix=f'_{i+1}')
-        df.columns = names or [f'values_{i}' for i in range(len(dfs))]
-    return df
-
-
-def shorten_dfs(
-    _dfs: Sequence[pd.DataFrame],
-    max_step: Optional[int] = None
-) -> None:
-    if not _dfs:
-        return
-
-    if max_step is None:
-        # shortest maximum step among the dfs
-        max_step = min(_df.index.max() for _df in _dfs)
-    for i, _df in enumerate(_dfs):
-        _dfs[i] = _df[_df.index <= max_step]  # type: ignore
-
-
 def group_experiments(
     base_dirs: Iterable[Path],
     name_cb: Optional[Callable[[Path], str]] = None,
     exclude_error_experiments: bool = True
 ) -> Dict[str, List[Path]]:
+    """Create dict from experiment name to a list of individual experiment dirs
+
+    ``name_cb`` provides a key for where to place each progress.csv into a
+    dictionary. By default, ``name_cb`` returns the experiment name the common
+    prefix attached to an experiment so that when num_samples is more than 1,
+    each sample is grouped into the same experiment.
+
+    As an example, if under base_dirs we have::
+
+
+        SAC_DM-v0_a_00000_0/progress.csv
+        SAC_DM-v0_a_00001_0/progress.csv
+        SAC_DM-v0_b_00000_0/progress.csv
+
+    `group_experiments` will by default output
+
+    .. code-block:: python
+
+        {
+            'SAC_DM-v0_a': ['SAC_DM-v0_a_00000_0', 'SAC_DM-v0_a_00001_0'],
+            'SAC_DM-v0_b': ['SAC_DM-v0_b_00000_0/progress.csv']
+        }
+
+    Alternatively, if given a custom ``name_cb`` to group them all together
+    such as
+
+    .. code-block:: python
+
+        def name_cb(abs_path_to_progress_file: Path) -> str:
+            return Path(abs_path_to_progress_file).parent.name.split('_')[0]
+
+    `group_experiments` would return
+
+    .. code-block:: python
+
+        {
+            'SAC': [
+                'SAC_DM-v0_a_00000_0',
+                'SAC_DM-v0_a_00001_0',
+                'SAC_DM-v0_b_00000_0',
+            ],
+        }
+
+    see also:
+
+    * :func:`get_progress`: convert this function output to dataframes
+    * :func:`plot_progress`: create plotly figure from output of `get_progress`
+
+    Here is an example of chaining these functions:
+
+    .. code-block:: python
+      :linenos:
+
+      base_dir = Path(~/ray/my_experiment).expanduser()
+      experiments = rlgear.utils.group_experiments([base_dir])
+      dfs = {nm: rlgear.utils.get_progress(exp)
+             for nm, exp in experiments.items}
+      fig = rlgear.utils.plot_progress(dfs)
+      fig.show()
+
+    """
 
     if name_cb is None:
 
-        def name_cb(_f: Path) -> str:
-            return '_'.join(Path(_f).parent.name.split('_')[:3])
+        def name_cb(abs_path_to_progress_file: Path) -> str:
+            return '_'.join(
+                Path(abs_path_to_progress_file).parent.name.split('_')[:3])
 
     assert name_cb is not None
 
@@ -484,6 +735,7 @@ def group_experiments(
     return {k: sorted(v) for k, v in out.items()}
 
 
+# pylint: disable=too-many-locals
 def get_progress(
     experiments: Iterable[Path],
     x_tag: str = 'timesteps_total',
@@ -491,7 +743,36 @@ def get_progress(
     only_complete_data: bool = False,
     max_x: Optional[Any] = None,
     names: Optional[Sequence[str]] = None
-) -> Tuple[pd.DataFrame, List[pd.DataFrame]]:
+) -> Tuple[Optional[pd.DataFrame], List[pd.DataFrame]]:
+    """Convert list of directories with progress.csv into single dataframe.
+
+    This function reads the progress.csv file in each directory and puts the
+    data in the tag column into a dataframe column where x_tag is the index.
+
+    Parameters
+    ----------
+    experiments : Iterable[Path]
+        list of experiments that contain a progress.csv file
+    x_tag : str (default 'timesteps_total')
+        what column in progress.csv to use as the index of the dataframe
+    tag : str (default 'episode_reward_mean')
+        what column in progress.csv to use as the data of the dataframe
+    only_complete_data : bool (default False)
+        when different experiments are further along than others, don't include
+        this extra data. This can be useful when averaging or computing
+        percentiles (see :func:`plot_progress`)
+    max_x : Optional[Any] (default None)
+        limit data so that data beyond x_tag is not included. This can be
+        useful when comparing two different sets of experiments where one
+        lasted far longer than the other.
+    names : Optional[Sequence[str]] (default None)
+        names to be given to the columns in the dataframe. If not provided,
+        this will be the sample number of the particular experiment. For
+        example, if individual experiments are called
+        ``SAC_DM-v0_a_00000_0`` and ``SAC_DM-v0_a_00001_0`` then
+        names will by default be ``["00000", "00001"]``
+
+    """
 
     def _print_suggestions(_word: str, _possibilities: List[str]) -> None:
         _suggestions = difflib.get_close_matches(_word, _possibilities)
@@ -499,8 +780,34 @@ def get_progress(
         if _suggestions:
             print(f'suggestions for "{_word}": {", ".join(_suggestions)}')
 
+    def _merge_dfs(
+        _dfs: Sequence[pd.DataFrame],
+        _names: Optional[Sequence[str]] = None
+    ) -> pd.DataFrame:
+
+        _df = _dfs[0]
+        if len(_dfs) > 1:
+            for i, __df in enumerate(_dfs[1:]):
+                _df = _df.join(__df, how='outer', rsuffix=f'_{i+1}')
+            _df.columns = _names or [f'values_{i}' for i in range(len(_dfs))]
+        return _df
+
+    def _shorten_dfs(_dfs: Sequence[pd.DataFrame]) -> None:
+        if not _dfs:
+            return
+
+        # shortest maximum step among the dfs
+        _max_x = min(_df.index.max() for _df in _dfs)
+
+        if max_x is not None:
+            _max_x = min(max_x, _max_x)
+
+        for i, _df in enumerate(_dfs):
+            _dfs[i] = _df[_df.index <= _max_x]  # type: ignore
+
     dfs = []
-    for exp in experiments:
+    filtered_names = []
+    for i, exp in enumerate(experiments):
         try:
             df = pd.read_csv(exp / 'progress.csv', low_memory=False)
         except pd.errors.EmptyDataError:
@@ -522,22 +829,23 @@ def get_progress(
             print('skipping')
             raise e
 
+        if names:
+            filtered_names.append(names[i])
+        else:
+            try:
+                filtered_names.append(exp.name.split('_')[3])
+            except IndexError:
+                filtered_names.append(exp.name)
+
         dfs.append(df)
 
     if only_complete_data:
-        shorten_dfs(dfs)
+        _shorten_dfs(dfs)
 
     if max_x is not None:
-        shorten_dfs(dfs, max_x)
-    if not names:
-        names = []
-        for exp in experiments:
-            try:
-                names.append(exp.name.split('_')[3])
-            except IndexError:
-                names.append(exp.name)
+        _shorten_dfs(dfs)
 
-    return merge_dfs(dfs, names), dfs
+    return _merge_dfs(dfs, filtered_names) if dfs else None, dfs
 
 
 # pylint: disable=too-many-locals
@@ -549,8 +857,29 @@ def plot_progress(
     percentile_alpha: float = 0.1,
     x_data_dfs: Optional[Dict[str, pd.DataFrame]] = None,
     sort_x_vals: bool = True,
-    name_order: Optional[List[str]] = None,
 ) -> go.Figure:
+    """Create plotly figure based on data.
+
+    Parameters
+    ----------
+    y_data_dfs : dict[str, pandas.DataFrame]
+        keys provide labels, values are what to plot
+    plot_indiv : bool, default True
+        when a DataFrame has more than one column, this function will plot
+        the mean. Setting ``plot_indiv`` will show the individual columns
+        as well
+    indiv_alph : float, default 0.2
+        when ``plot_indiv`` is set, this sets the alpha of the individual lines
+    percentiles : Tuple[float, float], optional
+        what percentiles to show (low, high)
+    x_data_dfs : Dict[str, pandas.DataFrame]
+        a provided x axis for each of the lines
+
+    Returns
+    -------
+    fig : plotly.graph_objects.Figure
+
+    """
 
     colors = plotly.colors.DEFAULT_PLOTLY_COLORS
 
@@ -580,38 +909,26 @@ def plot_progress(
 
         return fig.add_trace(go.Scatter(x=_x, y=_y, **_kwargs))
 
-    if name_order is None:
-        name_order = sorted(y_data_dfs)
-
-    assert set(name_order) == set(y_data_dfs), \
-        "name_order keys do not match y_data_dfs"
-
-    if x_data_dfs is None:
-        x_data_dfs = {}
-        for name in name_order:
-            df = y_data_dfs[name]
-            x_df = df.copy()
-            x_df[df.columns] = \
-                x_df.index.values[:, np.newaxis] * np.ones(df.shape)
-            x_data_dfs[name] = x_df
-    else:
+    if x_data_dfs:
         assert set(x_data_dfs) == set(y_data_dfs), (
             f'keys for x_data_dfs and y_data_dfs do not match:\n'
             f'x_data_dfs keys: {", ".join(x_data_dfs)}\n'
             f'y_data_dfs keys: {", ".join(y_data_dfs)}')
 
-    for i, name in enumerate(name_order):
-        df = y_data_dfs[name]
-        x_df = x_data_dfs[name]
-        mask = ~np.isnan(x_df.mean(axis=1)) & ~np.isnan(df.mean(axis=1))
-        x_df = x_df[mask]
-        df = df[mask]
-        mean_x = x_df.mean(axis=1)
+    for i, (name, df) in enumerate(y_data_dfs.items()):
+        if x_data_dfs:
+            x_df = df.index
+            mask = ~np.isnan(x_df.mean(axis=1)) & ~np.isnan(df.mean(axis=1))
+            x_df = x_df[mask]
+            df = df[mask]
+            x_vals = x_df.mean(axis=1)
+        else:
+            x_vals = df.index
 
         color = colors[i % len(colors)]
 
         _plot(
-            mean_x, df.mean(axis=1), name=name, showlegend=True,
+            x_vals, df.mean(axis=1), name=name, showlegend=True,
             line_color=color, line_width=2, mode='lines',
             hoverlabel_namelength=-1,
             legendgroup=name,
@@ -633,14 +950,14 @@ def plot_progress(
             line_clr = _make_transparency(color, 0.0)
 
             _plot(
-                mean_x, df.quantile(percentiles[0], axis=1),
+                x_vals, df.quantile(percentiles[0], axis=1),
                 showlegend=False, line_color=line_clr, mode='lines',
                 name=f'{name}-{round(100 * percentiles[0])}%',
                 hoverlabel_namelength=-1, hoverinfo='none',
                 legendgroup=name,
             )
             _plot(
-                mean_x, df.quantile(percentiles[1], axis=1),
+                x_vals, df.quantile(percentiles[1], axis=1),
                 showlegend=False, line_color=line_clr, mode='lines',
                 name=f'{name}-{round(100 * percentiles[1])}%',
                 hoverlabel_namelength=-1, hoverinfo='none',
@@ -657,16 +974,45 @@ class ImportClassDict(TypedDict):
 
 
 def import_class(class_info: Union[str, ImportClassDict]) -> Any:
+    """Convert a string or dict to an object.
+
+    Example
+    -------
+
+    .. code-block:: python
+
+        # using a list as class_info (outputs a class, not an object)
+        zeros_class = import_class('numpy.zeros')  # <function numpy.zeros>
+        zeros_obj = zeros_class(5)  # array([0., 0., 0., 0., 0.])
+        # using a dict as class_info (outputs an object)
+        zeros_obj = import_class(
+            {'cls': 'numpy.zeros', 'kwargs': {'shape': (5)}}
+        )  # array([0., 0., 0., 0., 0.])
+
+    Parameters
+    ----------
+    class_info : str or dict = {cls: str, kwargs: dict}
+        parameters to import
+
+    Returns
+    -------
+    obj : Any
+
+    """
     def _get_class(class_str: str) -> Any:
         _split = class_str.split('.')
         try:
             _module = importlib.import_module('.'.join(_split[:-1]))
             return getattr(_module, _split[-1])
-        except ModuleNotFoundError:
+        except Exception:  # pylint: disable=broad-exception-caught
             # e.g. when an object contains another object (e.g. a staticmethod
             # within a class)
-            _module = importlib.import_module('.'.join(_split[:-2]))
-            return getattr(getattr(_module, _split[-2]), _split[-1])
+            try:
+                _module = importlib.import_module('.'.join(_split[:-2]))
+                return getattr(getattr(_module, _split[-2]), _split[-1])
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                print(f'could not initialize {class_info}')
+                raise e
 
     if isinstance(class_info, str):
         return _get_class(class_info)
@@ -687,7 +1033,16 @@ def import_class(class_info: Union[str, ImportClassDict]) -> Any:
 
 
 def smooth(values: Sequence[float], weight: float) -> Sequence[float]:
-    # https://stackoverflow.com/a/49357445
+    """Apply exponential filter to sequence.
+
+    Parameters
+    ---------
+    values : Sequence[float]
+        values to be filtered
+    weight : float
+        weight for the filter
+    """
+
     smoothed = []
     smoothed.append(values[0])
     for v in values[1:]:
@@ -706,6 +1061,7 @@ T = TypeVar('T')
 
 
 def interp(x: T, x_low: Any, x_high: Any, y_low: Any, y_high: Any) -> T:
+    """Linear interpolation"""
     if x_low == x_high:
         return y_low
     else:

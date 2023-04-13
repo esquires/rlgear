@@ -16,12 +16,14 @@ from ray.rllib.policy.rnn_sequencing import add_time_dimension
 
 
 def xavier_init(m: nn.Module) -> None:
+    """Apply xavier initialization to the module."""
     if isinstance(m, (nn.Linear, nn.Conv2d)):
         nn.init.xavier_uniform_(m.weight)
         m.bias.data.fill_(0.01)  # type: ignore
 
 
 def init_modules(modules: Iterable[nn.Module]) -> None:
+    """Set module to cuda if cuda is available and use xavier initialization"""
     for m in modules:
         if torch.cuda.is_available():
             m.cuda()
@@ -38,11 +40,6 @@ def make_fc_layers(
             layers.append(nn.Dropout(p=dropout_pct))
         layers.append(act_cls())
     return layers
-
-
-def make_box(sz: int) -> gym.spaces.Box:
-    lim = np.inf * np.ones(sz, dtype=np.float32)
-    return gym.spaces.Box(-lim, lim)
 
 
 def state_helper(module: nn.Module, lstm_cell_size: int) -> List[torch.Tensor]:

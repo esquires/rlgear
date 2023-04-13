@@ -19,6 +19,20 @@ from .utils import MetaWriter, StrOrPath, import_class
 
 
 class MetaLoggerCallback(ray.tune.logger.LoggerCallback):
+    """Wraps :class:`rlgear.utils.MetaWriter` for use with \
+       :class:`ray.tune.logger.LoggerCallback`
+
+    Example
+    -------
+
+    .. code-block:: python
+
+        ray.tune.run(
+            callbacks=[MetaLoggerCallback(MetaWriter())],
+            ...
+        )
+
+    """
     def __init__(self, meta_writer: MetaWriter):
         self.meta_writer = meta_writer
 
@@ -27,6 +41,16 @@ class MetaLoggerCallback(ray.tune.logger.LoggerCallback):
 
 
 class Filter:
+    """Helper class for filtering extra \
+        :class:`ray.tune.logger.LoggerCallback` outputs
+
+    Parameters
+    ----------
+    excludes: List[str]
+        list of regexes to be compiled via :func:`re.compile`
+
+    """
+
     def __init__(self, excludes: List[str]):
         self.regexes = [re.compile(e) for e in excludes]
 
@@ -44,6 +68,10 @@ class Filter:
 
 class TBXFilteredLoggerCallback(
             ray.tune.logger.tensorboardx.TBXLoggerCallback):
+    """Wrapper around :class:`ray.tune.logger.tensorboardx.TBXLoggerCallback` \
+        that reduces the output based on the provided :func:`Filter`.
+    """
+
     def __init__(self, filt: Filter):
         super().__init__()
         self.filt = filt
@@ -58,6 +86,9 @@ class TBXFilteredLoggerCallback(
 
 
 class JsonFiltredLoggerCallback(ray.tune.logger.json.JsonLoggerCallback):
+    """Wrapper around :class:`ray.tune.logger.json.JsonLoggerCallback` \
+        that reduces the output based on the provided :func:`Filter`.
+    """
     def __init__(self, filt: Filter):
         super().__init__()
         self.filt = filt
@@ -72,7 +103,13 @@ class JsonFiltredLoggerCallback(ray.tune.logger.json.JsonLoggerCallback):
 
 
 class CSVFilteredLoggerCallback(ray.tune.logger.csv.CSVLoggerCallback):
-    """Filter results as well as wait to get all possible logging items."""
+    """Wrapper around :class:`ray.tune.logger.csv.CSVLoggerCallback` \
+        that reduces the output based on the provided excludes regexes.
+
+    This callback also waits a set number of training iterations before
+    freezing the keys as sometimes not all logging items are available
+    on the first iteration.
+    """
 
     def __init__(self, wait_iterations: int, excludes: List[str]):
         super().__init__()
@@ -185,17 +222,17 @@ def make_tune_kwargs(
             if isinstance(cb, dict):
                 kwargs['callbacks'][i] = import_class(kwargs['callbacks'][i])
 
-    if 'csv' in params:
+    excludes = params['log'].get('callbacks', {}).get('excludes', [])
+
+    if 'csv' in params['log']['callbacks']:
         kwargs['callbacks'].append(CSVFilteredLoggerCallback(
-            params['csv']['wait_iterations'], params['csv']['excludes']))
+            params['log']['callbacks']['csv']['wait_iterations'], excludes))
 
-    if 'tensorboard' in params:
-        kwargs['callbacks'].append(TBXFilteredLoggerCallback(
-            Filter(params['tensorboard']['excludes'])))
+    if 'tensorboard' in params['log']['callbacks']:
+        kwargs['callbacks'].append(TBXFilteredLoggerCallback(Filter(excludes)))
 
-    if 'json' in params:
-        kwargs['callbacks'].append(JsonFiltredLoggerCallback(
-            Filter(params['json']['excludes'])))
+    if 'json' in params['log']['callbacks']:
+        kwargs['callbacks'].append(JsonFiltredLoggerCallback(Filter(excludes)))
 
     kwargs['callbacks'].append(MetaLoggerCallback(meta_writer))
 
@@ -232,7 +269,10 @@ def gen_passwd(size: int) -> str:
 
     Example
     -------
-    ray.init(redis_password=gen_passwd(512))
+
+    .. code-block:: python
+
+      ray.init(redis_password=gen_passwd(512))
 
     Parameters
     ----------
@@ -251,6 +291,21 @@ def check(
     lim: float = 1.0e7,
     **kwargs: Any
 ) -> None:
+    """Raises :py:exc:`ValueError` when ``|x|`` has any large or ``nan`` \
+       entries.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        a tensor to be checked for large or ``nan`` values
+    args : Any
+        these will be printed out in order when ``|x|`` is large or has \
+        ``nan`` values
+    lim : float, default 1.0e7
+        value that defines whether ``|x|`` is large
+    kwargs : Any
+        these will be printed out in ``|x|`` is large or has ``nan`` values
+    """
 
     failed = torch.any(torch.isnan(x))
     isinf = torch.any(torch.isinf(x))

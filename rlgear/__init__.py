@@ -1,5 +1,7 @@
 import rlgear.utils
 
+__version__ = '0.0.1'
+
 try:
     import ray  # NOQA
 except ImportError as e:

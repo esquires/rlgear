@@ -237,6 +237,10 @@ def make_tune_kwargs(
     if 'json' in params['log']['callbacks']:
         kwargs['callbacks'].append(JsonFiltredLoggerCallback(Filter(excludes)))
 
+    if 'tune_kwargs' not in meta_writer.str_data:
+        meta_writer.str_data['tune_kwargs.yaml'] = kwargs
+        meta_writer.objs_to_pickle['tune_kwargs.p'] = kwargs
+
     kwargs['callbacks'].append(MetaLoggerCallback(meta_writer))
 
     return kwargs

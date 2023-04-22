@@ -52,7 +52,8 @@ class MetaWriter():
         (e.g. large files) found in dirs
     str_data : dict, optional
         key: filename to show up under meta directory
-        value: text to show up within the file
+        value: text to show up within the file. If the value is not a string,
+        the output will be converted to yaml (if a dict) or pprint.pformat.
     objs_to_pickle : dict, optional
         key: filename to show up under meta directory
         value: pickleable object picked into the file
@@ -136,7 +137,7 @@ class MetaWriter():
         files: Optional[Iterable[StrOrPath]] = None,
         dirs: Optional[Iterable[StrOrPath]] = None,
         ignore_patterns: Optional[Iterable[str]] = None,
-        str_data: Optional[Dict[str, str]] = None,
+        str_data: Optional[Dict[str, Any]] = None,
         objs_to_pickle: Optional[Dict[str, Any]] = None,
         print_log_dir: bool = True,
         symlink_dir: Optional[str] = "."
@@ -239,6 +240,32 @@ class MetaWriter():
             where to log the data
 
         """
+
+        def _rm_non_pickleable(_obj: Any) -> Any:
+            # don't perturb the original object
+            if isinstance(_obj, dict) and 'callbacks' in _obj:
+                # callbacks are often no pickleable so try to remove these
+                _obj_shallow_copy = {
+                    k: v for k, v in _obj.items() if k != 'callbacks'}
+                return _obj_shallow_copy
+            else:
+                return _obj
+
+        def _to_str(_obj: Any) -> str:
+            if isinstance(_obj, str):
+                return _obj
+            elif isinstance(data, dict):
+                try:
+                    return yaml.dump(_obj)
+                except TypeError:
+                    _obj = _rm_non_pickleable(_obj)
+                    try:
+                        return yaml.dump(_obj)
+                    except TypeError:
+                        return pprint.pformat(_obj)
+            else:
+                return pprint.pformat(_obj)
+
         if self.print_log_dir:
             print(f'log dir: {logdir}')
 
@@ -256,11 +283,15 @@ class MetaWriter():
 
         for fname_str, data in self.str_data.items():
             with open(meta_dir / fname_str, 'w', encoding='UTF-8') as f:
-                f.write(data)
+                f.write(_to_str(data))
 
         for fname_str, data in self.objs_to_pickle.items():
             with open(meta_dir / fname_str, 'wb') as fp:
-                pickle.dump(data, fp)
+                try:
+                    pickle.dump(data, fp)
+                except (RuntimeError, pickle.PickleError):
+                    data = _rm_non_pickleable(data)
+                    pickle.dump(data, fp)
 
         for fname in self.files:
             shutil.copy2(fname, meta_dir)
@@ -598,7 +629,7 @@ def from_yaml(
         repo_roots=params['log']['repos'],
         files=inputs,
         str_data={
-            'params.yaml': yaml.dump(params),
+            'params.yaml': params,
             'host.txt': socket.gethostname()
         }
     )

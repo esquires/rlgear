@@ -871,13 +871,7 @@ def get_progress(
             print('skipping')
             raise e
 
-        if names:
-            filtered_names.append(names[i])
-        else:
-            try:
-                filtered_names.append(exp.name.split('_')[3])
-            except IndexError:
-                filtered_names.append(exp.name)
+        filtered_names.append(names[i] if names else exp.name)
 
         dfs.append(df)
 
@@ -983,8 +977,10 @@ def plot_progress(
         if plot_indiv:
             clr = _make_transparency(color, indiv_alpha)
             for col in df.columns:
+                if x_data_dfs:
+                    x_vals = x_df[col]
                 _plot(
-                    x_df[col], df[col], name=col, showlegend=False,
+                    x_vals, df[col], name=col, showlegend=False,
                     line_color=clr, mode='lines',
                     hoverlabel_namelength=-1,
                     hoverinfo='none',

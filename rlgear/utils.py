@@ -1,4 +1,5 @@
 import sys
+import argparse
 import socket
 import collections
 import os
@@ -279,7 +280,7 @@ class MetaWriter():
                 pass
 
         meta_dir = (Path(logdir) / 'meta').resolve()
-        meta_dir.mkdir(exist_ok=True)
+        meta_dir.mkdir(exist_ok=True, parents=True)
 
         for fname_str, data in self.str_data.items():
             with open(meta_dir / fname_str, 'w', encoding='UTF-8') as f:
@@ -1015,7 +1016,10 @@ class ImportClassDict(TypedDict):
     kwargs: Dict[str, Any]
 
 
-def import_class(class_info: Union[str, ImportClassDict]) -> Any:
+def import_class(
+    class_info: Union[str, ImportClassDict],
+    **kwargs: Any
+) -> Any:
     """Convert a string or dict to an object.
 
     Example
@@ -1035,6 +1039,9 @@ def import_class(class_info: Union[str, ImportClassDict]) -> Any:
     ----------
     class_info : str or dict = {cls: str, kwargs: dict}
         parameters to import
+    kwargs : Any
+        additional keyword arguments to be provided to the constructor
+        (ignored if ``class_info`` is a str)
 
     Returns
     -------
@@ -1059,16 +1066,17 @@ def import_class(class_info: Union[str, ImportClassDict]) -> Any:
     if isinstance(class_info, str):
         return _get_class(class_info)
     else:
-        kwargs = class_info['kwargs']
-        keys = copy.deepcopy(list(kwargs.keys()))
+        cls_kwargs = class_info['kwargs']
+        keys = copy.deepcopy(list(cls_kwargs.keys()))
         for key in keys:
             if key.startswith('__preprocess_'):
-                kwargs[key.replace('__preprocess_', '')] = \
-                    import_class(kwargs[key])
-                del kwargs[key]
+                cls_kwargs[key.replace('__preprocess_', '')] = \
+                    import_class(cls_kwargs[key])
+                del cls_kwargs[key]
 
         try:
-            return _get_class(class_info['cls'])(**class_info['kwargs'])
+            merged_kwargs = {**cls_kwargs, **kwargs}
+            return _get_class(class_info['cls'])(**merged_kwargs)
         except Exception as e:
             print(f'could not initialize {class_info}')
             raise e
@@ -1134,3 +1142,12 @@ class GymLegacyAPIWrapper(gym.Wrapper):
             out = out[0]
 
         return out
+
+
+def add_rlgear_args(parser: argparse.ArgumentParser) \
+        -> argparse.ArgumentParser:
+    """Add arguments ``yaml_file``, ``exp_name``, and ``--debug`` to parser."""
+    parser.add_argument('yaml_file')
+    parser.add_argument('exp_name')
+    parser.add_argument('--debug', action='store_true')
+    return parser

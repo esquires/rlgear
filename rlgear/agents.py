@@ -7,7 +7,7 @@ import numpy as np
 import gym
 
 import ray.tune
-from ray.rllib.agents.trainer import Trainer
+from ray.rllib.algorithms.algorithm import Algorithm
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
 from .utils import get_inputs, dict_str2num, parse_inputs, StrOrPath
@@ -35,7 +35,7 @@ def make_dummy_env(
 
 
 def make_agent(yaml_file: Path, search_dirs: Iterable[StrOrPath]) \
-        -> Tuple[Type[Trainer], dict]:
+        -> Tuple[Type[Algorithm], dict]:
     inputs = get_inputs(yaml_file, search_dirs)
     params = dict_str2num(parse_inputs(inputs))
 

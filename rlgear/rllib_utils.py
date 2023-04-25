@@ -1,4 +1,3 @@
-import argparse
 import collections
 import re
 import csv
@@ -8,7 +7,12 @@ import random
 from typing import Any, Union, Dict, Set, List
 
 import numpy as np
-import torch
+
+try:
+    from torch import Tensor
+except ImportError:
+    Tensor = Any
+
 
 import ray
 import ray.tune.utils
@@ -168,14 +172,6 @@ class CSVFilteredLoggerCallback(ray.tune.logger.csv.CSVLoggerCallback):
             self.prior_results[trial].append(result)
 
 
-def add_rlgear_args(parser: argparse.ArgumentParser) \
-        -> argparse.ArgumentParser:
-    parser.add_argument('yaml_file')
-    parser.add_argument('exp_name')
-    parser.add_argument('--debug', action='store_true')
-    return parser
-
-
 # pylint: disable=too-many-branches
 def make_tune_kwargs(
     params: dict[Any, Any],
@@ -293,7 +289,7 @@ def gen_passwd(size: int) -> str:
 
 
 def check(
-    x: torch.Tensor,
+    x: Tensor,
     *args: Any,
     lim: float = 1.0e7,
     **kwargs: Any
@@ -313,6 +309,7 @@ def check(
         these will be printed out in ``|x|`` is large or has ``nan`` values
 
     """
+    import torch
     failed = torch.any(torch.isnan(x))
     isinf = torch.any(torch.isinf(x))
     if np.isinf(lim):

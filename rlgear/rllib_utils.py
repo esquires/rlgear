@@ -11,8 +11,7 @@ import numpy as np
 try:
     from torch import Tensor
 except ImportError:
-    Tensor = Any
-
+    Tensor = None
 
 import ray
 import ray.tune.utils

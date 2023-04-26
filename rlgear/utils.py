@@ -20,8 +20,13 @@ import gym
 import numpy as np
 import pandas as pd
 
-import plotly
-import plotly.graph_objects as go
+try:
+    import plotly
+    import plotly.graph_objects as go
+except (ModuleNotFoundError, ImportError):
+    plotly = None
+    class go:
+        Figure = None
 
 import yaml
 

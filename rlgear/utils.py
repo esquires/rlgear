@@ -25,7 +25,8 @@ try:
     import plotly.graph_objects as go
 except (ModuleNotFoundError, ImportError):
     plotly = None
-    class go:
+
+    class go:  # type: ignore
         Figure = None
 
 import yaml

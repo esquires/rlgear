@@ -11,12 +11,13 @@ import numpy as np
 try:
     from torch import Tensor
 except ImportError:
-    Tensor = None
+    Tensor = None  # type: ignore
 
 import ray
 import ray.tune.utils
 from ray.rllib.evaluation.episode import Episode
 from ray.rllib.evaluation.episode_v2 import EpisodeV2
+from tensorboardX import SummaryWriter
 
 from .utils import MetaWriter, StrOrPath, import_class
 
@@ -69,6 +70,26 @@ class Filter:
         return out
 
 
+class SummaryWriterAdjPrefix(SummaryWriter):
+    def __init__(self, prefixes: dict[str, str], *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.ordered_keys = self.sort_by_desc_strlen(list(prefixes))
+        self.prefixes = prefixes
+
+    @staticmethod
+    def sort_by_desc_strlen(keys: list[str]) -> list[str]:
+        idxs = np.argsort([-len(k) for k in keys])
+        return [keys[i] for i in idxs]
+
+    def add_scalar(self, tag: str, *args: Any, **kwargs: Any) -> None:
+        for prefix in self.ordered_keys:
+            if tag.startswith(prefix):
+                tag = tag.replace(prefix, self.prefixes[prefix], 1)
+                break
+
+        return super().add_scalar(tag, *args, **kwargs)
+
+
 class TBXFilteredLoggerCallback(
             ray.tune.logger.tensorboardx.TBXLoggerCallback):
     """Wrap :class:`ray.tune.logger.tensorboardx.TBXLoggerCallback`.
@@ -76,9 +97,11 @@ class TBXFilteredLoggerCallback(
     Reduces the output based on the provided :func:`Filter`.
     """
 
-    def __init__(self, filt: Filter):
+    def __init__(self, filt: Filter, prefixes: dict[str, str]):
         super().__init__()
         self.filt = filt
+        self.prefixes = prefixes
+        self._summary_writer_cls = self._summary_writer_cls_rm_prefix
 
     def log_trial_result(
         self,
@@ -87,6 +110,10 @@ class TBXFilteredLoggerCallback(
         result: Dict[str, Any]
     ) -> None:
         super().log_trial_result(iteration, trial, self.filt(result))
+
+    def _summary_writer_cls_rm_prefix(self, *args: Any, **kwargs: Any) \
+            -> SummaryWriterAdjPrefix:
+        return SummaryWriterAdjPrefix(self.prefixes, *args, **kwargs)
 
 
 class JsonFiltredLoggerCallback(ray.tune.logger.json.JsonLoggerCallback):
@@ -227,7 +254,10 @@ def make_tune_kwargs(
             params['log']['callbacks']['csv']['wait_iterations'], excludes))
 
     if 'tensorboard' in params['log']['callbacks']:
-        kwargs['callbacks'].append(TBXFilteredLoggerCallback(Filter(excludes)))
+        kwargs['callbacks'].append(TBXFilteredLoggerCallback(
+            Filter(excludes),
+            params['log']['callbacks']['tensorboard'].get('prefixes', {})
+        ))
 
     if 'json' in params['log']['callbacks']:
         kwargs['callbacks'].append(JsonFiltredLoggerCallback(Filter(excludes)))
@@ -308,7 +338,7 @@ def check(
         these will be printed out in ``|x|`` is large or has ``nan`` values
 
     """
-    import torch
+    import torch  # pylint: disable=import-outside-toplevel
     failed = torch.any(torch.isnan(x))
     isinf = torch.any(torch.isinf(x))
     if np.isinf(lim):

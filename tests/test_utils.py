@@ -5,7 +5,8 @@ from pathlib import Path
 import numpy as np
 import gym
 
-import rlgear
+import rlgear.utils
+import rlgear.postprocess
 
 
 def test_meta_writer() -> None:
@@ -84,7 +85,7 @@ def test_import_class() -> None:
 
 def test_smooth() -> None:
     vals = [1, 2]
-    smoothed_vals = rlgear.utils.smooth(vals, 0.5)
+    smoothed_vals = rlgear.postprocess.smooth(vals, 0.5)
     assert len(smoothed_vals) == 2
     assert smoothed_vals[0] == 1
     assert np.isclose(smoothed_vals[1], 1.5, atol=1e-9)

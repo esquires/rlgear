@@ -15,6 +15,7 @@ except ImportError:
 
 import ray
 import ray.tune.utils
+import ray.rllib.algorithms.callbacks
 from ray.rllib.evaluation.episode import Episode
 from ray.rllib.evaluation.episode_v2 import EpisodeV2
 from tensorboardX import SummaryWriter

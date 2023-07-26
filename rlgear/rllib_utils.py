@@ -18,7 +18,11 @@ import ray.tune.utils
 import ray.rllib.algorithms.callbacks
 from ray.rllib.evaluation.episode import Episode
 from ray.rllib.evaluation.episode_v2 import EpisodeV2
-from tensorboardX import SummaryWriter
+
+try:
+    from tensorboardX import SummaryWriter
+except ImportError:
+    SummaryWriter = object  # type: ignore
 
 from .utils import MetaWriter, StrOrPath, import_class
 
@@ -238,7 +242,7 @@ def make_tune_kwargs(
             cfg['callbacks'] = import_class(cfg['callbacks'])
         else:
             cfg['callbacks'] = ray.rllib.algorithms.callbacks.MultiCallbacks(
-                [import_class(cb) for cb in cfg['callbacks']])
+                [import_class(cb) for cb in cfg['callbacks']])  # type: ignore
 
     # handle the tune logger callbacks
     if 'callbacks' not in kwargs:

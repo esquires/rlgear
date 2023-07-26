@@ -318,7 +318,6 @@ def group_experiments(
       fig.show()
 
     """
-
     if name_cb is None:
 
         def name_cb(abs_path_to_progress_file: Path) -> str:

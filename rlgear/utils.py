@@ -247,7 +247,6 @@ class MetaWriter():
             where to log the data
 
         """
-
         self.configure()
 
         def _rm_non_pickleable(_obj: Any) -> Any:

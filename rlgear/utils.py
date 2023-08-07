@@ -1,3 +1,4 @@
+import tempfile
 import sys
 import argparse
 import socket
@@ -287,6 +288,12 @@ class MetaWriter():
                 pass
 
         meta_dir = (Path(logdir) / 'meta').resolve()
+
+        if meta_dir.exists():
+            meta_dir = Path(tempfile.mkdtemp(dir=logdir, prefix='meta-'))
+            if self.print_log_dir:
+                print(f'existing meta dir found, writing to {meta_dir}')
+
         meta_dir.mkdir(exist_ok=True, parents=True)
 
         for fname_str, data in self.str_data.items():
@@ -604,7 +611,7 @@ def from_yaml(
     search_dirs: StrOrPath | Iterable[StrOrPath],
     exp_name: str,
 ) -> tuple[dict[Any, Any], MetaWriter, Path, list[Path]]:
-    """Convert a yaml_file into a dict.
+    """Wraps common function calls when processing yaml files.
 
     Parameters
     ----------

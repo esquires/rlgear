@@ -380,20 +380,14 @@ class MLPNet(nn.Module):
         init_modules([self.trunk, self.head])
 
     # pylint: disable=unused-argument
-    def forward(
-            self,
-            x: torch.Tensor,
-            state: List[torch.Tensor],
-            seq_lens: torch.Tensor,
-            time_major: bool) -> Tuple[torch.Tensor, list]:
-
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         if bool(self.trunk):
             self.emb = self.trunk(x)
         else:
             self.emb = x
         self.logits = self.head(self.emb)
         assert self.logits is not None
-        return self.logits, []
+        return self.logits
 
     # pylint: disable=no-self-use
     def get_initial_state(self) -> List[torch.Tensor]:

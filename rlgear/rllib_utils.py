@@ -349,7 +349,7 @@ def check(
     if np.isinf(lim):
         failed |= isinf
     else:
-        failed |= isinf or torch.any(torch.abs(x) >= lim)
+        failed |= isinf or torch.any(torch.abs(x.float()) >= lim)
 
     if not failed:
         return

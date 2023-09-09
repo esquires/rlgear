@@ -25,7 +25,7 @@ def get_progress(
     experiments: Iterable[Path],
     x_tag: str = 'timesteps_total',
     tag: str = 'episode_reward_mean',
-    only_complete_data: bool = False,
+    only_complete_data: bool = True,
     max_x: Optional[Any] = None,
     names: Optional[Sequence[str]] = None
 ) -> Tuple[Optional[pd.DataFrame], List[pd.DataFrame]]:
@@ -42,7 +42,7 @@ def get_progress(
         what column in progress.csv to use as the index of the dataframe
     tag : str (default 'episode_reward_mean')
         what column in progress.csv to use as the data of the dataframe
-    only_complete_data : bool (default False)
+    only_complete_data : bool (default True)
         when different experiments are further along than others, don't include
         this extra data. This can be useful when averaging or computing
         percentiles (see :func:`plot_progress`)
@@ -126,6 +126,45 @@ def get_progress(
     return _merge_dfs(dfs, filtered_names) if dfs else None, dfs
 
 
+def get_dataframes(
+    experiments: dict[str, Iterable[Path]],
+    smooth_weight: Optional[float] = None,
+    **get_progress_kwargs: Any,
+) -> dict[str, pd.DataFrame]:
+    """Wrapper for :func:`get_progress`
+
+    Parameters
+    ----------
+    experiments : dict[str, Iterable[Path]]
+        list of experiments that contain a progress.csv file. see
+        :func:`group_experiments`
+    smooth_weight: Optional[float]
+        weight for call to :func:`smooth`
+    get_progress_kwargs : Any
+        configurations for :func:`get_progress`
+
+    Returns
+    -------
+    dataframes : dict[str, pd.DataFrame]
+        keys match those in experiments
+
+    """
+    dfs = {}
+
+    for nm, exp in experiments.items():
+
+        df = get_progress(exp, **get_progress_kwargs)[0]
+
+        if df is not None:
+            if smooth_weight is not None:
+                for col in df.columns:
+                    df[col] = smooth_weight(df[col].values, 0.8)
+
+            dfs[nm] = df
+
+    return dfs
+
+
 # pylint: disable=too-many-locals
 def plot_progress(
     y_data_dfs: Dict[str, pd.DataFrame],
@@ -199,11 +238,7 @@ def plot_progress(
 
     for i, (name, df) in enumerate(y_data_dfs.items()):
         if x_data_dfs:
-            x_df = df.index
-            mask = ~np.isnan(x_df.mean(axis=1)) & ~np.isnan(df.mean(axis=1))
-            x_df = x_df[mask]
-            df = df[mask]
-            x_vals = x_df.mean(axis=1)
+            x_vals = x_data_dfs[name].mean(axis=1)
         else:
             x_vals = df.index
 
@@ -220,7 +255,7 @@ def plot_progress(
             clr = _make_transparency(color, indiv_alpha)
             for col in df.columns:
                 if x_data_dfs:
-                    x_vals = x_df[col]
+                    x_vals = x_data_dfs[name][col]
                 _plot(
                     x_vals, df[col], name=col, showlegend=False,
                     line_color=clr, mode='lines',

@@ -1,6 +1,7 @@
 import tempfile
 import sys
 import argparse
+import tempfile
 import socket
 import os
 import re
@@ -610,6 +611,7 @@ def from_yaml(
     yaml_file: StrOrPath,
     search_dirs: StrOrPath | Iterable[StrOrPath],
     exp_name: str,
+    **meta_writer_kwargs: Any,
 ) -> tuple[dict[Any, Any], MetaWriter, Path, list[Path]]:
     """Wraps common function calls when processing yaml files.
 
@@ -621,6 +623,8 @@ def from_yaml(
         see :func:`get_inputs`
     exp_name : str
         used to create a string that can be used as a log directory
+    meta_writer_kwargs : Any
+        additional arguments for the MetaWriter constructor
 
     Returns
     -------
@@ -640,20 +644,69 @@ def from_yaml(
     """
     inputs = get_inputs(yaml_file, search_dirs)
     params = dict_str2num(parse_inputs(inputs))
-    meta_writer = MetaWriter(
-        repo_roots=params['log']['repos'],
-        files=inputs,
-        str_data={
-            'params.yaml': params,
-            'host.txt': socket.gethostname()
-        }
-    )
+
+    if 'repo_roots' in meta_writer_kwargs:
+        meta_writer_kwargs['repo_roots'] |= params['log']['repos']
+    else:
+        meta_writer_kwargs['repo_roots'] = params['log']['repos']
+
+    if 'files' in meta_writer_kwargs:
+        meta_writer_kwargs['files'] += inputs
+    else:
+        meta_writer_kwargs['files'] = inputs
+
+    str_data = {'params.yaml': params, 'host.txt': socket.gethostname()}
+    if 'str_data' in meta_writer_kwargs:
+        meta_writer_kwargs['str_data'] |= str_data
+    else:
+        meta_writer_kwargs['str_data'] = str_data
+
+    meta_writer = MetaWriter(**meta_writer_kwargs)
 
     prefix = next((Path(d).expanduser() for d in params['log']['prefixes']
                    if Path(d).expanduser().is_dir()))
     log_dir = \
         prefix / params['log']['exp_group'] / Path(yaml_file).stem / exp_name
     return params, meta_writer, log_dir, inputs
+
+
+def write_metadata(
+    yaml_file: StrOrPath,
+    search_dirs: Optional[StrOrPath | Iterable[StrOrPath]] = None,
+    out_dir: Optional[Path] = None,
+    **meta_writer_kwargs: Any,
+) -> Path:
+    """Wrapper for reading a yaml file and writing meta data.
+
+    This is most commonly used for postprocessing.
+
+    Parameters
+    ----------
+    yaml_file : StrOrPath
+        see :func:`get_inputs`
+    search_dirs : Optional[StrOrPath | Iterable[StrOrPath]]
+        see :func:`get_inputs`. if None, searches the current working directory for a
+        repo root
+    out_dir : Optional[Path]
+        where to write the meta data
+    """
+    yaml_file = Path(yaml_file)
+
+    if out_dir is None:
+        out_dir = Path(tempfile.mkdtemp(prefix=f'{yaml_file.stem}-'))
+
+    if search_dirs is None:
+        # pylint: disable=import-outside-toplevel
+        import git
+        search_dirs = git.Repo(Path.cwd(), search_parent_directories=True).working_dir
+
+    meta_writer = from_yaml(
+        yaml_file, search_dirs, yaml_file.stem, **meta_writer_kwargs
+    )[1]
+
+    meta_writer.write(out_dir)
+
+    return Path(out_dir)
 
 
 def get_latest_checkpoint(ckpt_root_dir: StrOrPath) -> str:

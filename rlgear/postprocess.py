@@ -20,114 +20,126 @@ except (ModuleNotFoundError, ImportError):
 from .utils import get_files
 
 
-# pylint: disable=too-many-locals
-def get_progress(
-    experiments: Iterable[Path],
-    x_tag: str = 'timesteps_total',
-    tag: str = 'episode_reward_mean',
-    only_complete_data: bool = True,
-    max_x: Optional[Any] = None,
-    names: Optional[Sequence[str]] = None
-) -> Tuple[Optional[pd.DataFrame], List[pd.DataFrame]]:
-    """Convert list of directories with progress.csv into single dataframe.
+class ProgressReader:
+    def __init__(self) -> None:
+        self.df_cache: dict[Path, pd.DataFrame] = {}
 
-    This function reads the progress.csv file in each directory and puts the
-    data in the tag column into a dataframe column where x_tag is the index.
+    # pylint: disable=too-many-locals
+    def get_progress(
+        self,
+        experiments: Iterable[Path],
+        x_tag: str = 'timesteps_total',
+        tag: str = 'episode_reward_mean',
+        only_complete_data: bool = True,
+        max_x: Optional[Any] = None,
+        names: Optional[Sequence[str]] = None
+    ) -> Tuple[Optional[pd.DataFrame], List[pd.DataFrame]]:
+        """Convert list of directories with progress.csv into single dataframe.
 
-    Parameters
-    ----------
-    experiments : Iterable[Path]
-        list of experiments that contain a progress.csv file
-    x_tag : str (default 'timesteps_total')
-        what column in progress.csv to use as the index of the dataframe
-    tag : str (default 'episode_reward_mean')
-        what column in progress.csv to use as the data of the dataframe
-    only_complete_data : bool (default True)
-        when different experiments are further along than others, don't include
-        this extra data. This can be useful when averaging or computing
-        percentiles (see :func:`plot_progress`)
-    max_x : Optional[Any] (default None)
-        limit data so that data beyond x_tag is not included. This can be
-        useful when comparing two different sets of experiments where one
-        lasted far longer than the other.
-    names : Optional[Sequence[str]] (default None)
-        names to be given to the columns in the dataframe. If not provided,
-        this will be the sample number of the particular experiment. For
-        example, if individual experiments are called
-        ``SAC_DM-v0_a_00000_0`` and ``SAC_DM-v0_a_00001_0`` then
-        names will by default be ``["00000", "00001"]``
+        This function reads the progress.csv file in each directory and puts the
+        data in the tag column into a dataframe column where x_tag is the index.
 
-    """
-    def _print_suggestions(_word: str, _possibilities: List[str]) -> None:
-        _suggestions = difflib.get_close_matches(_word, _possibilities)
+        Parameters
+        ----------
+        experiments : Iterable[Path]
+            list of experiments that contain a progress.csv file
+        x_tag : str (default 'timesteps_total')
+            what column in progress.csv to use as the index of the dataframe
+        tag : str (default 'episode_reward_mean')
+            what column in progress.csv to use as the data of the dataframe
+        only_complete_data : bool (default True)
+            when different experiments are further along than others, don't include
+            this extra data. This can be useful when averaging or computing
+            percentiles (see :func:`plot_progress`)
+        max_x : Optional[Any] (default None)
+            limit data so that data beyond x_tag is not included. This can be
+            useful when comparing two different sets of experiments where one
+            lasted far longer than the other.
+        names : Optional[Sequence[str]] (default None)
+            names to be given to the columns in the dataframe. If not provided,
+            this will be the sample number of the particular experiment. For
+            example, if individual experiments are called
+            ``SAC_DM-v0_a_00000_0`` and ``SAC_DM-v0_a_00001_0`` then
+            names will by default be ``["00000", "00001"]``
 
-        if _suggestions:
-            print(f'suggestions for "{_word}": {", ".join(_suggestions)}')
+        """
+        def _print_suggestions(_word: str, _possibilities: List[str]) -> None:
+            _suggestions = difflib.get_close_matches(_word, _possibilities)
 
-    def _merge_dfs(
-        _dfs: Sequence[pd.DataFrame],
-        _names: Optional[Sequence[str]] = None
-    ) -> pd.DataFrame:
+            if _suggestions:
+                print(f'suggestions for "{_word}": {", ".join(_suggestions)}')
 
-        _df = _dfs[0]
-        if len(_dfs) > 1:
-            for i, __df in enumerate(_dfs[1:]):
-                _df = _df.join(__df, how='outer', rsuffix=f'_{i+1}')
-            _df.columns = _names or [f'values_{i}' for i in range(len(_dfs))]
-        return _df
+        def _merge_dfs(
+            _dfs: Sequence[pd.DataFrame],
+            _names: Optional[Sequence[str]] = None
+        ) -> pd.DataFrame:
 
-    def _shorten_dfs(_dfs: Sequence[pd.DataFrame]) -> None:
-        if not _dfs:
-            return
+            _df = _dfs[0]
+            if len(_dfs) > 1:
+                for i, __df in enumerate(_dfs[1:]):
+                    _df = _df.join(__df, how='outer', rsuffix=f'_{i+1}')
+                _df.columns = _names or [f'values_{i}' for i in range(len(_dfs))]
+            return _df
 
-        # shortest maximum step among the dfs
-        _max_x = min(_df.index.max() for _df in _dfs)
+        def _shorten_dfs(_dfs: Sequence[pd.DataFrame]) -> None:
+            if not _dfs:
+                return
+
+            # shortest maximum step among the dfs
+            _max_x = min(_df.index.max() for _df in _dfs)
+
+            if max_x is not None:
+                _max_x = min(max_x, _max_x)
+
+            for i, _df in enumerate(_dfs):
+                _dfs[i] = _df[_df.index <= _max_x]  # type: ignore
+
+        dfs = []
+        filtered_names = []
+        for i, exp in enumerate(experiments):
+
+            fname = exp / 'progress.csv'
+            if fname in self.df_cache:
+                df = self.df_cache[fname]
+            else:
+                try:
+                    df = pd.read_csv(fname, low_memory=False)
+                except pd.errors.EmptyDataError:
+                    print(f'{exp} has empty progress.csv, skipping')
+                    continue
+                self.df_cache[fname] = df
+
+            try:
+                df = df[[x_tag, tag]].set_index(x_tag)
+            except KeyError as e:
+                keys = list(df.columns)
+                print('Error setting index for')
+                print(str(exp))
+                print('available keys are')
+                pprint.pprint(keys)
+                if x_tag not in keys:
+                    _print_suggestions(x_tag, keys)
+                if tag not in keys:
+                    _print_suggestions(tag, keys)
+                print('skipping')
+                raise e
+
+            filtered_names.append(names[i] if names else exp.name)
+
+            dfs.append(df)
+
+        if only_complete_data:
+            _shorten_dfs(dfs)
 
         if max_x is not None:
-            _max_x = min(max_x, _max_x)
+            _shorten_dfs(dfs)
 
-        for i, _df in enumerate(_dfs):
-            _dfs[i] = _df[_df.index <= _max_x]  # type: ignore
-
-    dfs = []
-    filtered_names = []
-    for i, exp in enumerate(experiments):
-        try:
-            df = pd.read_csv(exp / 'progress.csv', low_memory=False)
-        except pd.errors.EmptyDataError:
-            print(f'{exp} has empty progress.csv, skipping')
-            continue
-
-        try:
-            df = df[[x_tag, tag]].set_index(x_tag)
-        except KeyError as e:
-            keys = list(df.columns)
-            print('Error setting index for')
-            print(str(exp))
-            print('available keys are')
-            pprint.pprint(keys)
-            if x_tag not in keys:
-                _print_suggestions(x_tag, keys)
-            if tag not in keys:
-                _print_suggestions(tag, keys)
-            print('skipping')
-            raise e
-
-        filtered_names.append(names[i] if names else exp.name)
-
-        dfs.append(df)
-
-    if only_complete_data:
-        _shorten_dfs(dfs)
-
-    if max_x is not None:
-        _shorten_dfs(dfs)
-
-    return _merge_dfs(dfs, filtered_names) if dfs else None, dfs
+        return _merge_dfs(dfs, filtered_names) if dfs else None, dfs
 
 
 def get_dataframes(
     experiments: dict[str, Iterable[Path]],
+    progress_reader: ProgressReader,
     smooth_weight: Optional[float] = None,
     **get_progress_kwargs: Any,
 ) -> dict[str, pd.DataFrame]:
@@ -153,12 +165,12 @@ def get_dataframes(
 
     for nm, exp in experiments.items():
 
-        df = get_progress(exp, **get_progress_kwargs)[0]
+        df = progress_reader.get_progress(exp, **get_progress_kwargs)[0]
 
         if df is not None:
             if smooth_weight is not None:
                 for col in df.columns:
-                    df[col] = smooth_weight(df[col].values, 0.8)
+                    df[col] = smooth(df[col].values, 0.8)
 
             dfs[nm] = df
 
@@ -173,7 +185,6 @@ def plot_progress(
     percentiles: Optional[Tuple[float, float]] = None,
     percentile_alpha: float = 0.1,
     x_data_dfs: Optional[Dict[str, pd.DataFrame]] = None,
-    sort_x_vals: bool = True,
 ) -> go.Figure:
     """Create plotly figure based on data.
 
@@ -194,8 +205,6 @@ def plot_progress(
         lines
     x_data_dfs : Dict[str, pandas.DataFrame]
         a provided x axis for each of the lines
-    sort_x_vals : bool, default = True
-        whether to sort the x values in the plots
 
     Returns
     -------
@@ -223,12 +232,8 @@ def plot_progress(
         return f'rgba({_color[4:-1]}, {_alpha})'
 
     def _plot(_x: Any, _y: Any, **_kwargs: Any) -> go.Scatter:
-        if sort_x_vals:
-            _idxs = np.argsort(_x)
-            _x = np.asarray(_x)[_idxs]
-            _y = np.asarray(_y)[_idxs]
-
-        return fig.add_trace(go.Scatter(x=_x, y=_y, **_kwargs))
+        _nan_mask = np.logical_or(~np.isnan(_y), ~np.isnan(_x))
+        return fig.add_trace(go.Scatter(x=_x[_nan_mask], y=_y[_nan_mask], **_kwargs))
 
     if x_data_dfs:
         assert set(x_data_dfs) == set(y_data_dfs), (

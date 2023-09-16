@@ -290,10 +290,15 @@ class InfoToCustomMetricsCallback(
         episode: Union[Episode, EpisodeV2, Exception],
         **__: Any,
     ) -> None:
-        assert isinstance(episode, Episode)
-        for info in episode._agent_to_last_info.values():
+
+        if isinstance(episode, Episode):
+            for info in episode._agent_to_last_info.values():
+                episode.custom_metrics.update(
+                    ray.tune.utils.flatten_dict(info.copy()))
+        else:
             episode.custom_metrics.update(
-                ray.tune.utils.flatten_dict(info.copy()))
+                ray.tune.utils.flatten_dict(episode._last_infos)
+            )
 
 
 def gen_passwd(size: int) -> str:

@@ -165,7 +165,10 @@ def get_dataframes(
 
     for nm, exp in experiments.items():
 
-        df = progress_reader.get_progress(exp, **get_progress_kwargs)[0]
+        try:
+            df = progress_reader.get_progress(exp, **get_progress_kwargs)[0]
+        except KeyError:
+            continue
 
         if df is not None:
             if smooth_weight is not None:

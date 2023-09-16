@@ -848,3 +848,34 @@ def add_rlgear_args(parser: argparse.ArgumentParser) \
     parser.add_argument('exp_name')
     parser.add_argument('--debug', action='store_true')
     return parser
+
+
+class Profiler:
+    def __init__(self) -> None:
+        self.beg_times: dict[Any, float] = {}
+        self.end_times: dict[Any, float] = {}
+        self.overall_beg_time = time.perf_counter()
+        self.overall_end_time: Optional[float] = None
+
+    def add(self, key: Any) -> Any:  # pylint: disable=no-self-use
+        class _Timer:
+            def __enter__(self_timer) -> None:  # pylint: disable=no-self-argument
+                self.beg_times[key] = time.perf_counter()
+
+            def __exit__(self_timer, *args) -> None:  # pylint: disable=no-self-argument
+                self.end_times[key] = time.perf_counter()
+        return _Timer()
+
+    def report(self, normalize: bool) -> dict[Any, float]:
+        if self.overall_end_time is None:
+            self.overall_end_time = time.perf_counter()
+
+        T = self.overall_end_time - self.overall_beg_time
+        raw_times = {k: self.end_times[k] - self.beg_times[k] for k in self.beg_times}
+
+        if not normalize:
+            return raw_times
+        else:
+            normalized_times = {k: v / T for k, v in raw_times.items()}
+            return normalized_times
+

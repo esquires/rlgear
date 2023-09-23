@@ -30,7 +30,7 @@ class ProgressReader:
         experiments: Iterable[Path],
         x_tag: str = 'timesteps_total',
         tag: str = 'episode_reward_mean',
-        only_complete_data: bool = True,
+        only_complete_data: bool = False,
         max_x: Optional[Any] = None,
         names: Optional[Sequence[str]] = None
     ) -> Tuple[Optional[pd.DataFrame], List[pd.DataFrame]]:
@@ -188,6 +188,7 @@ def plot_progress(
     percentiles: Optional[Tuple[float, float]] = None,
     percentile_alpha: float = 0.1,
     x_data_dfs: Optional[Dict[str, pd.DataFrame]] = None,
+    stats_include_nan: bool = False,
 ) -> go.Figure:
     """Create plotly figure based on data.
 
@@ -208,6 +209,9 @@ def plot_progress(
         lines
     x_data_dfs : Dict[str, pandas.DataFrame]
         a provided x axis for each of the lines
+    stats_include_nan : bool, default False
+        when computing the mean or percentiles, whether to include rows in the dataframe
+        that include nan
 
     Returns
     -------
@@ -252,8 +256,13 @@ def plot_progress(
 
         color = colors[i % len(colors)]
 
+        if stats_include_nan:
+            nan_mask = np.ones_like(x_vals)
+        else:
+            nan_mask = np.all(~np.isnan(df.values), axis=1)
+
         _plot(
-            x_vals, df.mean(axis=1), name=name, showlegend=True,
+            x_vals[nan_mask], df[nan_mask].mean(axis=1), name=name, showlegend=True,
             line_color=color, line_width=2, mode='lines',
             hoverlabel_namelength=-1,
             legendgroup=name,
@@ -277,14 +286,14 @@ def plot_progress(
             line_clr = _make_transparency(color, 0.0)
 
             _plot(
-                x_vals, df.quantile(percentiles[0], axis=1),
+                x_vals[nan_mask], df[nan_mask].quantile(percentiles[0], axis=1),
                 showlegend=False, line_color=line_clr, mode='lines',
                 name=f'{name}-{round(100 * percentiles[0])}%',
                 hoverlabel_namelength=-1, hoverinfo='none',
                 legendgroup=name,
             )
             _plot(
-                x_vals, df.quantile(percentiles[1], axis=1),
+                x_vals[nan_mask], df[nan_mask].quantile(percentiles[1], axis=1),
                 showlegend=False, line_color=line_clr, mode='lines',
                 name=f'{name}-{round(100 * percentiles[1])}%',
                 hoverlabel_namelength=-1, hoverinfo='none',

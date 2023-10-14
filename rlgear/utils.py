@@ -1,7 +1,6 @@
 import tempfile
 import sys
 import argparse
-import tempfile
 import socket
 import os
 import re
@@ -741,16 +740,13 @@ def get_files(base_dir: Path, fname: str) -> list[Path]:
         # for every branch of the tree.
         # having a helper function avoids confusing the signature of the outer
         # function with an output as an input.
-        _dirs = []
-        for _child in _base_dir.iterdir():
-            if _child.name == fname:
-                _out.append(_child)
-                return
-            elif _child.is_dir():
-                _dirs.append(_child)
+        if (_base_dir / fname).exists():
+            _out.append(_base_dir / fname)
+            return
 
-        for _dir in _dirs:
-            _helper(_dir, _out)
+        for _child in _base_dir.iterdir():
+            if _child.is_dir():
+                _helper(_child, _out)
 
     out: list[Path] = []
     _helper(base_dir, out)

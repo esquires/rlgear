@@ -1,4 +1,5 @@
 import collections
+import copy
 import re
 import csv
 import os
@@ -241,7 +242,7 @@ def make_tune_kwargs(
         if isinstance(cfg['callbacks'], str):
             cfg['callbacks'] = import_class(cfg['callbacks'])
         else:
-            cfg['callbacks'] = ray.rllib.algorithms.callbacks.MultiCallbacks(
+            cfg['callbacks'] = ray.rllib.algorithms.callbacks.make_multi_callbacks(
                 [import_class(cb) for cb in cfg['callbacks']])  # type: ignore
 
     # handle the tune logger callbacks
@@ -268,8 +269,14 @@ def make_tune_kwargs(
         kwargs['callbacks'].append(JsonFiltredLoggerCallback(Filter(excludes)))
 
     if 'tune_kwargs' not in meta_writer.str_data:
+        kwargs_copy = copy.deepcopy(kwargs)
+        try:
+            del kwargs_copy['config']['callbacks']
+        except KeyError:
+            pass
+
         meta_writer.str_data['tune_kwargs.yaml'] = kwargs
-        meta_writer.objs_to_pickle['tune_kwargs.p'] = kwargs
+        meta_writer.objs_to_pickle['tune_kwargs.p'] = kwargs_copy
 
     kwargs['callbacks'].append(MetaLoggerCallback(meta_writer))
 

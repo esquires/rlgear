@@ -328,7 +328,7 @@ def gen_passwd(size: int) -> str:
 
 
 def check(
-    x: Tensor,
+    x: Tensor | np.ndarray,
     *args: Any,
     lim: float = 1.0e7,
     **kwargs: Any
@@ -348,13 +348,31 @@ def check(
         these will be printed out in ``|x|`` is large or has ``nan`` values
 
     """
-    import torch  # pylint: disable=import-outside-toplevel
-    failed = torch.any(torch.isnan(x))
-    isinf = torch.any(torch.isinf(x))
+
+    if Tensor is not None and isinstance(x, Tensor):
+        import torch  # pylint: disable=import-outside-toplevel
+        any_func = torch.any
+        isnan_func = torch.isnan
+        isinf_func = torch.isinf
+
+        def above_thresh_func(_x: np.ndarray, _lim: float) -> bool:
+            return torch.any(torch.abs(_x.float()) >= _lim)
+
+    else:
+        x = np.asarray(x)
+        any_func = np.any
+        isnan_func = np.isnan
+        isinf_func = np.isinf
+
+        def above_thresh_func(_x: np.ndarray, _lim: float) -> bool:
+            return np.any(np.abs(_x.astype(float)) >= _lim)
+
+    failed = any_func(isnan_func(x))
+    isinf = any_func(isinf_func(x))
     if np.isinf(lim):
         failed |= isinf
     else:
-        failed |= isinf or torch.any(torch.abs(x.float()) >= lim)
+        failed |= isinf or above_thresh_func(x, lim)
 
     if not failed:
         return

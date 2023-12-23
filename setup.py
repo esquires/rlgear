@@ -16,7 +16,6 @@ setup(
         "gym",
         "dataclasses",
         # ray packages
-        "ray>=2.0.0",
         # extra rllib dependencies that don't come through automatically
         "crc32c",
         "requests",

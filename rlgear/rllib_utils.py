@@ -16,9 +16,9 @@ except ImportError:
 
 import ray
 import ray.tune.utils
-import ray.rllib.algorithms.callbacks
+import ray.rllib.agents.callbacks
 from ray.rllib.evaluation.episode import Episode
-from ray.rllib.evaluation.episode_v2 import EpisodeV2
+# from ray.rllib.evaluation.episode_v2 import EpisodeV2
 
 try:
     from tensorboardX import SummaryWriter
@@ -47,7 +47,7 @@ class MetaLoggerCallback(ray.tune.logger.LoggerCallback):
     def __init__(self, meta_writer: MetaWriter):
         self.meta_writer = meta_writer
 
-    def log_trial_start(self, trial: ray.tune.experiment.trial.Trial) -> None:
+    def log_trial_start(self, trial) -> None:
         self.meta_writer.write(trial.logdir)
 
 
@@ -97,7 +97,7 @@ class SummaryWriterAdjPrefix(SummaryWriter):
 
 
 class TBXFilteredLoggerCallback(
-            ray.tune.logger.tensorboardx.TBXLoggerCallback):
+            ray.tune.logger.TBXLoggerCallback):
     """Wrap :class:`ray.tune.logger.tensorboardx.TBXLoggerCallback`.
 
     Reduces the output based on the provided :func:`Filter`.
@@ -112,7 +112,7 @@ class TBXFilteredLoggerCallback(
     def log_trial_result(
         self,
         iteration: int,
-        trial: ray.tune.experiment.trial.Trial,
+        trial,
         result: Dict[str, Any]
     ) -> None:
         super().log_trial_result(iteration, trial, self.filt(result))
@@ -122,7 +122,7 @@ class TBXFilteredLoggerCallback(
         return SummaryWriterAdjPrefix(self.prefixes, *args, **kwargs)
 
 
-class JsonFiltredLoggerCallback(ray.tune.logger.json.JsonLoggerCallback):
+class JsonFiltredLoggerCallback(ray.tune.logger.JsonLoggerCallback):
     """Wrap :class:`ray.tune.logger.json.JsonLoggerCallback`.
 
     Reduces the output based on the provided :func:`Filter`.
@@ -135,13 +135,13 @@ class JsonFiltredLoggerCallback(ray.tune.logger.json.JsonLoggerCallback):
     def log_trial_result(
         self,
         iteration: int,
-        trial: ray.tune.experiment.trial.Trial,
+        trial,
         result: Dict[str, Any]
     ) -> None:
         super().log_trial_result(iteration, trial, self.filt(result))
 
 
-class CSVFilteredLoggerCallback(ray.tune.logger.csv.CSVLoggerCallback):
+class CSVFilteredLoggerCallback(ray.tune.logger.CSVLoggerCallback):
     """Wrapper around :class:`ray.tune.logger.csv.CSVLoggerCallback` \
         that reduces the output based on the provided excludes regexes.
 
@@ -160,7 +160,7 @@ class CSVFilteredLoggerCallback(ray.tune.logger.csv.CSVLoggerCallback):
     def log_trial_result(
         self,
         iteration: int,  # pylint: disable=unused-argument
-        trial: ray.tune.experiment.trial.Trial,
+        trial,
         result: Dict[str, Any]
     ) -> None:
         if trial not in self._trial_files:
@@ -226,6 +226,7 @@ def make_tune_kwargs(
     if debug:
         kwargs['local_dir'] = os.path.join(kwargs['local_dir'], 'debug')
         cfg['num_workers'] = 0
+        cfg['num_envs_per_worker'] = 1
         cfg['num_gpus'] = 0
         kwargs['max_failures'] = 0
         kwargs['num_samples'] = 1
@@ -242,8 +243,8 @@ def make_tune_kwargs(
         if isinstance(cfg['callbacks'], str):
             cfg['callbacks'] = import_class(cfg['callbacks'])
         else:
-            cfg['callbacks'] = ray.rllib.algorithms.callbacks.make_multi_callbacks(
-                [import_class(cb) for cb in cfg['callbacks']])  # type: ignore
+            import lvdb; lvdb.set_trace()  # fmt: skip
+            raise Exception("not implemented")
 
     # handle the tune logger callbacks
     if 'callbacks' not in kwargs:
@@ -284,17 +285,16 @@ def make_tune_kwargs(
 
 
 # pylint: disable=unused-argument
-def dirname_creator(trial: ray.tune.experiment.Trial) -> str:
+def dirname_creator(trial) -> str:
     return trial.trial_id.split('_')[0]
 
 
-class InfoToCustomMetricsCallback(
-        ray.rllib.algorithms.callbacks.DefaultCallbacks):
+class InfoToCustomMetricsCallback(ray.rllib.agents.callbacks.DefaultCallbacks):
     # pylint: disable=arguments-differ,no-self-use
     def on_episode_end(
         self,
         *_: Any,
-        episode: Union[Episode, EpisodeV2, Exception],
+        episode: Union[Episode, Exception],
         **__: Any,
     ) -> None:
 

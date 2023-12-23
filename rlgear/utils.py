@@ -164,8 +164,8 @@ class MetaWriter():
     def configure(self) -> None:
 
         # https://stackoverflow.com/a/58013217
-        self.requirements = sp.check_output(
-            [sys.executable, '-m', 'pip', 'freeze']).decode('UTF-8')
+        # self.requirements = sp.check_output(
+        #     [sys.executable, '-m', 'pip', 'freeze']).decode('UTF-8')
 
         self.orig_dir = Path(os.getcwd())
 
@@ -322,8 +322,8 @@ class MetaWriter():
         with open(meta_dir / 'args.txt', 'w', encoding='UTF-8') as f:
             f.write(self.cmd)
 
-        with open(meta_dir / 'requirements.txt', 'w', encoding='UTF-8') as f:
-            f.write(self.requirements)
+        # with open(meta_dir / 'requirements.txt', 'w', encoding='UTF-8') as f:
+        #     f.write(self.requirements)
 
         for repo_name, repo_data in self.git_info.items():
             meta_repo_dir = meta_dir / repo_name

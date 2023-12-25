@@ -35,7 +35,9 @@ def make_fc_layers(
         -> List[nn.Module]:
     layers: List[nn.Module] = []
     for inp_size, out_size in zip(sizes[:-1], sizes[1:]):
-        layers.append(nn.Linear(inp_size, out_size))
+        m = nn.Linear(inp_size, out_size)
+        xavier_init(m)
+        layers.append(m)
         if dropout_pct > 0:
             layers.append(nn.Dropout(p=dropout_pct))
         layers.append(act_cls())

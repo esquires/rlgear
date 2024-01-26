@@ -251,10 +251,11 @@ class MetaWriter():
 
         def _rm_non_pickleable(_obj: Any) -> Any:
             # don't perturb the original object
-            if isinstance(_obj, dict) and 'callbacks' in _obj:
+            ignore_keys = ['callbacks', 'config']
+            if isinstance(_obj, dict) and any([k in _obj for k in ignore_keys]):
                 # callbacks are often no pickleable so try to remove these
                 _obj_shallow_copy = {
-                    k: v for k, v in _obj.items() if k != 'callbacks'}
+                    k: v for k, v in _obj.items() if not (k in ignore_keys)}
                 return _obj_shallow_copy
             else:
                 return _obj
@@ -297,7 +298,7 @@ class MetaWriter():
             with open(meta_dir / fname_str, 'wb') as fp:
                 try:
                     pickle.dump(data, fp)
-                except (RuntimeError, pickle.PickleError):
+                except (RuntimeError, pickle.PickleError, AttributeError):
                     data = _rm_non_pickleable(data)
                     pickle.dump(data, fp)
 

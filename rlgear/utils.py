@@ -479,18 +479,23 @@ def find_filepath(
         if isinstance(search_dirs, (str, Path)):
             search_dirs = [search_dirs]
 
-        try:
-            paths = next(
-                list(Path(d).rglob(fname_path.name))
-                for d in search_dirs)  # type: ignore
-            if not paths:  # pylint: disable=no-else-raise
-                raise FileNotFoundError(
-                    f'could not find {fname} in {search_dirs}')
-            else:
-                return paths[0]
-        except StopIteration as e:
-            print(f'could not find {fname} in {search_dirs}')
-            raise e
+        found_files = []
+        for d in search_dirs:
+            temp_found_files = list(Path(d).rglob(fname_path.name))
+            if temp_found_files:
+                found_files += temp_found_files
+
+        if not found_files:  # pylint: disable=no-else-raise
+            raise FileNotFoundError(
+                f'could not find {fname} in {search_dirs}')
+
+        if len(found_files) > 1:
+            print((
+                f"Found multiple files named {fname}:\n{found_files}\n"
+                f"Using first entry."
+            ))
+
+        return found_files[0]
 
 
 def get_inputs(

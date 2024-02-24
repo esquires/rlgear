@@ -378,6 +378,10 @@ def group_experiments(
 
     assert name_cb is not None
 
+    # this makes sure the same base_dir is not being checked twice while
+    # preserving order: https://stackoverflow.com/a/53657523
+    base_dirs = list({k: None for k in base_dirs})
+
     progress_files: List[Path] = []
     for d in base_dirs:
         progress_files += get_files(d, 'progress.csv')

@@ -5,6 +5,7 @@ import csv
 import os
 import string
 import random
+from pathlib import Path
 from typing import Any, Union, Dict, Set, List
 
 import numpy as np
@@ -16,9 +17,12 @@ except ImportError:
 
 import ray
 import ray.tune.utils
+import ray.tune.registry
+import ray.tune.trainable.trainable
 import ray.rllib.algorithms.callbacks
 from ray.rllib.evaluation.episode import Episode
 from ray.rllib.evaluation.episode_v2 import EpisodeV2
+from ray.tune.registry import ENV_CREATOR, _global_registry
 
 try:
     from tensorboardX import SummaryWriter
@@ -202,6 +206,20 @@ class CSVFilteredLoggerCallback(ray.tune.logger.csv.CSVLoggerCallback):
             self._trial_files[trial].flush()
         else:
             self.prior_results[trial].append(result)
+
+
+def get_trainer(tune_kwargs: dict[Any, Any]) -> ray.tune.trainable.trainable.Trainable:
+    trainer_cls = ray.tune.registry.get_trainable_cls(tune_kwargs["run_or_experiment"])
+    trainer = trainer_cls(config=tune_kwargs["config"])
+    if tune_kwargs["restore"]:
+        trainer.restore(str(Path(tune_kwargs["restore"]).expanduser()))
+    return trainer
+
+
+def make_env(env: str, cfg: dict[str, Any], run_check: bool) -> Any:
+    env_creator = _global_registry.get(ENV_CREATOR, env)  # type: ignore
+    env = env_creator(cfg)
+    return env
 
 
 # pylint: disable=too-many-branches

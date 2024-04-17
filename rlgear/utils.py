@@ -667,8 +667,23 @@ def from_yaml(
 
     meta_writer = MetaWriter(**meta_writer_kwargs)
 
-    prefix = next((Path(d).expanduser() for d in params['log']['prefixes']
-                   if Path(d).expanduser().is_dir()))
+    prefixes = [Path(d).expanduser() for d in params['log']['prefixes']]
+
+    try:
+        prefix = next((p for p in prefixes if p.is_dir()))
+    except StopIteration as e:
+        msg = (
+            "None of the following paths in params['log']['prefixes'] exist: "
+            f"{', '.join(str(p) for p in prefixes)}. "
+        )
+
+        if len(prefixes) == 1:
+            msg += f'Run "mkdir -p {prefixes[0]}"'
+        else:
+            msg += "Run one of the following:\n"
+            msg += "\n".join(f"mkdir -p {p}" for p in prefixes)
+        raise FileNotFoundError(msg) from e
+
     log_dir = \
         prefix / params['log']['exp_group'] / Path(yaml_file).stem / exp_name
     return params, meta_writer, log_dir, inputs

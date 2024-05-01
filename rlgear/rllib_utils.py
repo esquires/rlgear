@@ -1,12 +1,13 @@
-import collections
 import copy
-import re
 import csv
+import numbers
 import os
-import string
 import random
+import re
+import string
+from collections import defaultdict
 from pathlib import Path
-from typing import Any, Union, Dict, Set, List
+from typing import Any, Dict, List, Set, Union
 
 import numpy as np
 
@@ -16,12 +17,13 @@ except ImportError:
     Tensor = None  # type: ignore
 
 import ray
-import ray.tune.utils
+import ray.rllib.algorithms.callbacks
 import ray.tune.registry
 import ray.tune.trainable.trainable
-import ray.rllib.algorithms.callbacks
+import ray.tune.utils
 from ray.rllib.evaluation.episode import Episode
 from ray.rllib.evaluation.episode_v2 import EpisodeV2
+from ray.tune.experiment.trial import Trial
 from ray.tune.registry import ENV_CREATOR, _global_registry
 
 try:
@@ -68,7 +70,7 @@ class Filter:
     def __init__(self, excludes: List[str]):
         self.regexes = [re.compile(e) for e in excludes]
 
-    def __call__(self, d: Dict[str, Any]) -> Dict[str, Any]:
+    def __call__(self, d: dict[str, Any]) -> dict[str, Any]:
         flat_result = ray.tune.utils.flatten_dict(d, delimiter="/")
 
         out = {}
@@ -80,24 +82,26 @@ class Filter:
         return out
 
 
+class AdjPrefix:
+    def __init__(self, prefixes: dict[str, str]):
+        self.prefixes = prefixes
+
+    def adj(self, val: str) -> str:
+        for old_prefix, new_prefix in self.prefixes.items():
+            if val.startswith(old_prefix):
+                return val.replace(old_prefix, new_prefix, 1)
+
+        return val
+
+
 class SummaryWriterAdjPrefix(SummaryWriter):
     def __init__(self, prefixes: dict[str, str], *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
-        self.ordered_keys = self.sort_by_desc_strlen(list(prefixes))
-        self.prefixes = prefixes
-
-    @staticmethod
-    def sort_by_desc_strlen(keys: list[str]) -> list[str]:
-        idxs = np.argsort([-len(k) for k in keys])
-        return [keys[i] for i in idxs]
+        self.adj_prefix = AdjPrefix(prefixes)
 
     def add_scalar(self, tag: str, *args: Any, **kwargs: Any) -> None:
-        for prefix in self.ordered_keys:
-            if tag.startswith(prefix):
-                tag = tag.replace(prefix, self.prefixes[prefix], 1)
-                break
-
-        return super().add_scalar(tag, *args, **kwargs)
+        new_tag = self.adj_prefix.adj(tag)
+        return super().add_scalar(new_tag, *args, **kwargs)
 
 
 class TBXFilteredLoggerCallback(
@@ -157,55 +161,51 @@ class CSVFilteredLoggerCallback(ray.tune.logger.csv.CSVLoggerCallback):
     def __init__(self, wait_iterations: int, excludes: List[str]):
         super().__init__()
         self.wait_iterations = wait_iterations
-        self.prior_results: Dict[Any, Any] = collections.defaultdict(list)
-        self.keys: Set[str] = set()
-        self.excludes = excludes
+        self.prior_results: dict[Trial, list[dict[str, Any]]] = defaultdict(list)
+        self.keys: dict[Trial, set[str]] = defaultdict(set)
+        self.filt = Filter(excludes)
+        self.excluded_keys: set[str] = set()
 
     def log_trial_result(
-        self,
-        iteration: int,  # pylint: disable=unused-argument
-        trial: ray.tune.experiment.trial.Trial,
-        result: Dict[str, Any]
+        self, iteration: int, trial: Trial, result: dict[str, Any]
     ) -> None:
+
+        # see piece of ray.tune.logger.csv.CSVLoggerCallback:log_trial_result
         if trial not in self._trial_files:
             self._setup_trial(trial)
 
-        tmp = result.copy()
-        tmp.pop("config", None)
-        result = ray.tune.utils.flatten_dict(tmp, delimiter="/")
+        training_iteration = result['training_iteration']
+        result = self.filt(result)
+        self.excluded_keys.update({
+            k for k, r in result.items() if not isinstance(r, numbers.Real)
+        })
+        self.keys[trial] |= set(result)
 
-        self.keys |= set(result)
+        if not self._trial_csv[trial] and training_iteration >= self.wait_iterations:
 
-        if not self._trial_csv[trial] and \
-                result['training_iteration'] >= self.wait_iterations:
-            # filter the results: explict excludes as well as those that are
-            # lists
-            keys = set()
-            regexes = [re.compile(e) for e in self.excludes]
-            for key in self.keys:
-                if not any(regex.match(key) for regex in regexes) and \
-                        not any(isinstance(res.get(key, np.nan), (str, list))
-                                for res in self.prior_results[trial]):
-                    keys.add(key)
+            keys = self.keys[trial] - self.excluded_keys
 
-            self._trial_csv[trial] = csv.DictWriter(
-                self._trial_files[trial], keys
-            )
+            # see piece of ray.tune.logger.csv.CSVLoggerCallback:log_trial_result
+            self._trial_csv[trial] = csv.DictWriter(self._trial_files[trial], keys)
             if not self._trial_continue[trial]:
                 self._trial_csv[trial].writeheader()
 
+            # now that we have a csv, write the cached results
             for r in self.prior_results[trial]:
-                self._trial_csv[trial].writerow(
-                    {k: r.get(k, np.nan)
-                     for k in self._trial_csv[trial].fieldnames})
+                self.writerow(self._trial_csv[trial], r)
 
         if self._trial_csv[trial]:
-            self._trial_csv[trial].writerow(
-                {k: result.get(k, np.nan)
-                 for k in self._trial_csv[trial].fieldnames})
+            self.writerow(self._trial_csv[trial], result)
             self._trial_files[trial].flush()
         else:
+            # We don't have all the keys yet so don't want to write a header.
+            # For now cache the results.
             self.prior_results[trial].append(result)
+
+    @staticmethod
+    def writerow(csv_writer: csv.DictWriter, result: dict[Any, Any]) -> None:
+        # copied from piece of ray.tune.logger.csv.CSVLoggerCallback:log_trial_result
+        csv_writer.writerow({k: result.get(k, np.nan) for k in csv_writer.fieldnames})
 
 
 def get_trainer(tune_kwargs: dict[Any, Any]) -> ray.tune.trainable.trainable.Trainable:

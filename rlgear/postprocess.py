@@ -32,7 +32,8 @@ class ProgressReader:
         tag: str = 'episode_reward_mean',
         only_complete_data: bool = False,
         max_x: Optional[Any] = None,
-        names: Optional[Sequence[str]] = None
+        names: Optional[Sequence[str]] = None,
+        tag_cb: Optional[Callable[[Path, str, list[str]], str]] = None,
     ) -> Tuple[Optional[pd.DataFrame], List[pd.DataFrame]]:
         """Convert list of directories with progress.csv into single dataframe.
 
@@ -64,10 +65,12 @@ class ProgressReader:
 
         """
         def _print_suggestions(_word: str, _possibilities: List[str]) -> None:
-            _suggestions = difflib.get_close_matches(_word, _possibilities)
+            _suggestions = difflib.get_close_matches(_word, _possibilities, n=5)
 
             if _suggestions:
-                print(f'suggestions for "{_word}": {", ".join(_suggestions)}')
+                print(f'suggestions for "{_word}": ')
+                for _suggestion in _suggestions:
+                    print(_suggestion)
 
         def _merge_dfs(
             _dfs: Sequence[pd.DataFrame],
@@ -94,6 +97,13 @@ class ProgressReader:
             for i, _df in enumerate(_dfs):
                 _dfs[i] = _df[_df.index <= _max_x]  # type: ignore
 
+        if tag_cb is None:
+
+            def tag_cb(
+                _experiment_path: Path, _tag: str, _avail_tags: list[str]
+            ) -> str:
+                return _tag
+
         dfs = []
         filtered_names = []
         for i, exp in enumerate(experiments):
@@ -109,24 +119,24 @@ class ProgressReader:
                     continue
                 self.df_cache[fname] = df
 
+            avail_tags = list(df.columns)
+            temp_x_tag = tag_cb(exp, x_tag, avail_tags)
+            temp_tag = tag_cb(exp, tag, avail_tags)
+
             try:
-                df = df[[x_tag, tag]].set_index(x_tag)
-            except KeyError as e:
-                keys = list(df.columns)
+                df = df[[temp_x_tag, temp_tag]].set_index(temp_x_tag)
+            except KeyError:
+
+                print('-----------')
                 print('Error setting index for')
                 print(str(exp))
-                print('available keys are')
-                pprint.pprint(keys)
-                if x_tag not in keys:
-                    _print_suggestions(x_tag, keys)
-                if tag not in keys:
-                    _print_suggestions(tag, keys)
-                print('skipping')
-                raise e
-
-            filtered_names.append(names[i] if names else exp.name)
-
-            dfs.append(df)
+                if temp_x_tag not in avail_tags:
+                    _print_suggestions(temp_x_tag, avail_tags)
+                if temp_tag not in avail_tags:
+                    _print_suggestions(temp_tag, avail_tags)
+            else:
+                filtered_names.append(names[i] if names else exp.name)
+                dfs.append(df)
 
         if only_complete_data:
             _shorten_dfs(dfs)
@@ -165,10 +175,7 @@ def get_dataframes(
 
     for nm, exp in experiments.items():
 
-        try:
-            df = progress_reader.get_progress(exp, **get_progress_kwargs)[0]
-        except KeyError:
-            continue
+        df = progress_reader.get_progress(exp, **get_progress_kwargs)[0]
 
         if df is not None:
             if smooth_weight is not None:

@@ -430,7 +430,6 @@ class LSTMNet(nn.Module):
             time_major: bool) -> Tuple[torch.Tensor, list]:
 
         batch_size = x.shape[0]
-        max_seq_len = x.shape[0] // seq_lens.shape[0]
         state = [s.view(1, s.shape[0], s.shape[1]) for s in state]
 
         if self.mlp is not None:
@@ -441,8 +440,8 @@ class LSTMNet(nn.Module):
 
         # run through lstm
         x_time = add_time_dimension(
-            x, max_seq_len=max_seq_len, framework="torch",
-            time_major=time_major)
+            x, seq_lens=seq_lens, framework="torch", time_major=time_major
+        )
         self.emb, state_out = self.lstm(x_time, state)
 
         try:

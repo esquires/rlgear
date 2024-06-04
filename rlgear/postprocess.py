@@ -397,7 +397,6 @@ def group_experiments(
     error_files: List[str] = []
 
     # insert so that the dictionary is sorted according to modified time
-    progress_files = sorted(progress_files, key=lambda p: p.stat().st_mtime)
     for progress_file in progress_files:
         if (progress_file.parent / 'error.txt').exists():
             error_files.append(str(progress_file.parent))
@@ -411,7 +410,7 @@ def group_experiments(
         print('Errors detected in runs:')
         print('\n'.join(error_files))
 
-    return {k: sorted(v) for k, v in out.items()}
+    return out
 
 
 def smooth(values: Sequence[float], weight: float) -> Sequence[float]:

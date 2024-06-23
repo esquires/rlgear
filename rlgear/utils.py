@@ -12,7 +12,9 @@ import shutil
 import pprint
 import subprocess as sp
 from pathlib import Path
-from typing import Iterable, Union, Dict, Optional, Any, TypedDict, TypeVar
+from typing import (
+    Iterable, Union, Dict, Optional, Any, TypedDict, TypeVar, List, Dict, Union, Tuple
+)
 import numpy as np
 
 import yaml
@@ -508,7 +510,7 @@ def find_filepath(
 def get_inputs(
     yaml_file: StrOrPath,
     search_dirs: Union[StrOrPath, Iterable[StrOrPath]]
-) -> list[Path]:
+) -> List[Path]:
     """Recursively find inputs in a yaml_file.
 
     Example
@@ -564,7 +566,7 @@ def get_inputs(
     return inputs
 
 
-def parse_inputs(yaml_files: Iterable[StrOrPath]) -> dict[Any, Any]:
+def parse_inputs(yaml_files: Iterable[StrOrPath]) -> Dict[Any, Any]:
     """Return a dictionary from a list of yaml files.
 
     This is a wrapper around yaml.safe_load that merges multiple yaml file
@@ -596,7 +598,7 @@ def parse_inputs(yaml_files: Iterable[StrOrPath]) -> dict[Any, Any]:
     return out
 
 
-def dict_str2num(d: dict[Any, Any]) -> dict[Any, Any]:
+def dict_str2num(d: Dict[Any, Any]) -> Dict[Any, Any]:
     """Given a dictionary, recursively convert strings to numbers."""
     keys = list(d.keys())  # copy
     for k in keys:
@@ -613,10 +615,10 @@ def dict_str2num(d: dict[Any, Any]) -> dict[Any, Any]:
 
 def from_yaml(
     yaml_file: StrOrPath,
-    search_dirs: StrOrPath | Iterable[StrOrPath],
+    search_dirs: Union[StrOrPath, Iterable[StrOrPath]],
     exp_name: str,
     **meta_writer_kwargs: Any,
-) -> tuple[dict[Any, Any], MetaWriter, Path, list[Path]]:
+) -> Tuple[Dict[Any, Any], MetaWriter, Path, List[Path]]:
     """Wraps common function calls when processing yaml files.
 
     Parameters
@@ -691,7 +693,7 @@ def from_yaml(
 
 def write_metadata(
     yaml_file: StrOrPath,
-    search_dirs: Optional[StrOrPath | Iterable[StrOrPath]] = None,
+    search_dirs: Optional[Union[StrOrPath, Iterable[StrOrPath]]] = None,
     out_dir: Optional[Path] = None,
     **meta_writer_kwargs: Any,
 ) -> Path:
@@ -749,7 +751,7 @@ def get_latest_checkpoint(ckpt_root_dir: StrOrPath) -> str:
     return ckpts[np.argmax(ckpt_nums)]
 
 
-def get_files(base_dir: Path, fname: str) -> list[Path]:
+def get_files(base_dir: Path, fname: str) -> List[Path]:
     # this is faster than
     # glob.glob(str(_base_dir) + '/**/fname', recursive=True)
     # since once we find a fname file we can stop searching
@@ -882,7 +884,7 @@ class Profiler:
                 self.end_times[key] = time.perf_counter()
         return _Timer()
 
-    def report(self, normalize: bool) -> dict[Any, float]:
+    def report(self, normalize: bool) -> Dict[Any, float]:
         if self.overall_end_time is None:
             self.overall_end_time = time.perf_counter()
 

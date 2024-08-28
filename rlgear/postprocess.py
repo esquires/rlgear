@@ -22,7 +22,8 @@ from .utils import get_files
 
 class ProgressReader:
     def __init__(self) -> None:
-        self.df_cache: dict[Path, pd.DataFrame] = {}
+        self.df_cache: Dict[Path, pd.DataFrame] = {}
+        self.empty_cache: set[Path] = set()
 
     # pylint: disable=too-many-locals
     def get_progress(
@@ -33,7 +34,9 @@ class ProgressReader:
         only_complete_data: bool = False,
         max_x: Optional[Any] = None,
         names: Optional[Sequence[str]] = None,
-        tag_cb: Optional[Callable[[Path, str, list[str]], str]] = None,
+        tag_cb: Optional[Callable[[Path, str, List[str]], str]] = None,
+        df_cb: Optional[Callable[[Path, pd.DataFrame], pd.DataFrame]] = None,
+        log_fname: str = "progress.csv",
     ) -> Tuple[Optional[pd.DataFrame], List[pd.DataFrame]]:
         """Convert list of directories with progress.csv into single dataframe.
 
@@ -97,43 +100,48 @@ class ProgressReader:
             for i, _df in enumerate(_dfs):
                 _dfs[i] = _df[_df.index <= _max_x]  # type: ignore
 
-        if tag_cb is None:
-
-            def tag_cb(
-                _experiment_path: Path, _tag: str, _avail_tags: list[str]
-            ) -> str:
-                return _tag
-
         dfs = []
         filtered_names = []
         for i, exp in enumerate(experiments):
 
-            fname = exp / 'progress.csv'
+            fname = exp / log_fname
             if fname in self.df_cache:
                 df = self.df_cache[fname]
             else:
                 try:
-                    df = pd.read_csv(fname, low_memory=False)
+                    df = pd.read_csv(fname, low_memory=False, sep="\t")
                 except pd.errors.EmptyDataError:
-                    print(f'{exp} has empty progress.csv, skipping')
+                    if exp not in self.empty_cache:
+                        print(f'{exp} has empty {log_fname}, skipping')
+                        self.empty_cache.add(exp)
                     continue
                 self.df_cache[fname] = df
 
             avail_tags = list(df.columns)
-            temp_x_tag = tag_cb(exp, x_tag, avail_tags)
-            temp_tag = tag_cb(exp, tag, avail_tags)
+
+            if tag_cb is not None:
+                temp_x_tag = tag_cb(exp, x_tag, avail_tags)
+                temp_tag = tag_cb(exp, tag, avail_tags)
+            else:
+                temp_x_tag = x_tag
+                temp_tag = tag
+
+            if df_cb is not None:
+                df = df_cb(exp, df)
 
             try:
                 df = df[[temp_x_tag, temp_tag]].set_index(temp_x_tag)
             except KeyError:
 
                 print('-----------')
-                print('Error setting index for')
-                print(str(exp))
+                print(f'Error setting index "{temp_x_tag}" and data col "{temp_tag}"')
                 if temp_x_tag not in avail_tags:
+                    print(f"{temp_x_tag} not in available tags")
                     _print_suggestions(temp_x_tag, avail_tags)
                 if temp_tag not in avail_tags:
+                    print(f"{temp_x_tag} not in available tags")
                     _print_suggestions(temp_tag, avail_tags)
+                print(str(exp))
             else:
                 filtered_names.append(names[i] if names else exp.name)
                 dfs.append(df)
@@ -148,11 +156,11 @@ class ProgressReader:
 
 
 def get_dataframes(
-    experiments: dict[str, Iterable[Path]],
+    experiments: Dict[str, Iterable[Path]],
     progress_reader: ProgressReader,
     smooth_weight: Optional[float] = None,
     **get_progress_kwargs: Any,
-) -> dict[str, pd.DataFrame]:
+) -> Dict[str, pd.DataFrame]:
     """Wrapper for :func:`get_progress`
 
     Parameters
@@ -180,7 +188,7 @@ def get_dataframes(
         if df is not None:
             if smooth_weight is not None:
                 for col in df.columns:
-                    df[col] = smooth(df[col].values, 0.8)
+                    df[col] = smooth(df[col].values, smooth_weight)
 
             dfs[nm] = df
 
@@ -314,7 +322,8 @@ def plot_progress(
 def group_experiments(
     base_dirs: Iterable[Path],
     name_cb: Optional[Callable[[Path], str]] = None,
-    exclude_error_experiments: bool = True
+    exclude_error_experiments: bool = True,
+    log_fname: str = "progress.csv",
 ) -> Dict[str, List[Path]]:
     """Create dict with key (exp name), value (list of indiv experiment dirs).
 
@@ -391,7 +400,7 @@ def group_experiments(
 
     progress_files: List[Path] = []
     for d in base_dirs:
-        progress_files += get_files(d, 'progress.csv')
+        progress_files += get_files(d, log_fname)
 
     out: Dict[str, List[Path]] = collections.defaultdict(list)
     error_files: List[str] = []
@@ -404,7 +413,9 @@ def group_experiments(
             if exclude_error_experiments:
                 continue
 
-        out[name_cb(progress_file)].append(progress_file.parent)
+        name = name_cb(progress_file)
+        if progress_file.parent not in out[name]:
+            out[name].append(progress_file.parent)
 
     if error_files:
         print('Errors detected in runs:')
@@ -426,7 +437,15 @@ def smooth(values: Sequence[float], weight: float) -> Sequence[float]:
     """
     smoothed = []
     smoothed.append(values[0])
-    for v in values[1:]:
+
+    # don't smooth the ending nans but do smooth any in between
+    L = len(values)
+    for i in range(L - 1, -1, -1):
+        if not np.isnan(values[i]):
+            L = i + 1
+            break
+
+    for v in values[1:L]:
         if np.isnan(v):
             smoothed.append(smoothed[-1])
         else:
@@ -434,5 +453,8 @@ def smooth(values: Sequence[float], weight: float) -> Sequence[float]:
                 smoothed.append(v)
             else:
                 smoothed.append(smoothed[-1] * weight + v * (1 - weight))
+
+    if L != len(values):
+        smoothed += values[L:].tolist()
 
     return smoothed

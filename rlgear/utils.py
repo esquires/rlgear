@@ -391,11 +391,16 @@ class MetaWriter():
 
         for f_str in files:
             is_submodule = (repo_dir / f_str / '.git').exists()
-            if not is_submodule:
+            inp = repo_dir / f_str
+            is_latest = inp.name == "latest" and inp.is_symlink()
+            if not is_submodule and not is_latest:
                 out = meta_repo_dir / 'repo' / Path(f_str)
-                out.parent.mkdir(exist_ok=True, parents=True)
-                inp = (repo_dir / Path(f_str)).resolve()
-                shutil.copy2(inp, out)
+
+                if out.is_dir():
+                    out.mkdir(exist_ok=True, parents=True)
+                else:
+                    out.parent.mkdir(exist_ok=True, parents=True)
+                    shutil.copy2(inp, out)
 
     @staticmethod
     def _create_readme(
@@ -579,7 +584,7 @@ def parse_inputs(yaml_files: Iterable[StrOrPath]) -> Dict[Any, Any]:
         list of yaml files to parse.
 
     """
-    out: dict[Any, Any] = {}
+    out: Dict[Any, Any] = {}
     for inp in yaml_files:
         with open(inp, 'r', encoding='UTF-8') as f:
             params = yaml.safe_load(f)
@@ -757,7 +762,7 @@ def get_files(base_dir: Path, fname: str) -> List[Path]:
     # since once we find a fname file we can stop searching
     # that tree
 
-    def _helper(_base_dir: Path, _out: list[Path]) -> None:
+    def _helper(_base_dir: Path, _out: List[Path]) -> None:
         # passing the output into the function avoids having to create a list
         # for every branch of the tree.
         # having a helper function avoids confusing the signature of the outer
@@ -770,7 +775,7 @@ def get_files(base_dir: Path, fname: str) -> List[Path]:
             if _child.is_dir():
                 _helper(_child, _out)
 
-    out: list[Path] = []
+    out: List[Path] = []
     _helper(base_dir, out)
 
     return out
@@ -870,8 +875,8 @@ def add_rlgear_args(parser: argparse.ArgumentParser) \
 
 class Profiler:
     def __init__(self) -> None:
-        self.beg_times: dict[Any, float] = {}
-        self.end_times: dict[Any, float] = {}
+        self.beg_times: Dict[Any, float] = {}
+        self.end_times: Dict[Any, float] = {}
         self.overall_beg_time = time.perf_counter()
         self.overall_end_time: Optional[float] = None
 

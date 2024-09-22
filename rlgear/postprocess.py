@@ -204,6 +204,7 @@ def plot_progress(
     percentile_alpha: float = 0.1,
     x_data_dfs: Optional[Dict[str, pd.DataFrame]] = None,
     stats_include_nan: bool = False,
+    line_width: float = 2.0,
 ) -> go.Figure:
     """Create plotly figure based on data.
 
@@ -278,7 +279,7 @@ def plot_progress(
 
         _plot(
             x_vals[nan_mask], df[nan_mask].mean(axis=1), name=name, showlegend=True,
-            line_color=color, line_width=2, mode='lines',
+            line_color=color, line_width=line_width, mode='lines',
             hoverlabel_namelength=-1,
             legendgroup=name,
         )

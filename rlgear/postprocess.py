@@ -139,7 +139,7 @@ class ProgressReader:
                     print(f"{temp_x_tag} not in available tags")
                     _print_suggestions(temp_x_tag, avail_tags)
                 if temp_tag not in avail_tags:
-                    print(f"{temp_x_tag} not in available tags")
+                    print(f"{temp_tag} not in available tags")
                     _print_suggestions(temp_tag, avail_tags)
                 print(str(exp))
             else:

@@ -24,7 +24,8 @@ setup(
         "lz4",
         "tqdm",
         "scikit-image",
-        "tensorboardX"
+        "tensorboardX",
+        "tqdm",
     ],
     extras_require={
         "test": [

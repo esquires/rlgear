@@ -1,9 +1,9 @@
 import collections
 import difflib
-import pprint
 from pathlib import Path
 from typing import Iterable, List, Dict, Tuple, Optional, Sequence, \
-    Any, Callable
+    Any, Callable, TypeVar
+import tqdm
 
 import numpy as np
 import pandas as pd
@@ -18,6 +18,9 @@ except (ModuleNotFoundError, ImportError):
         Figure = None
 
 from .utils import get_files
+
+
+T = TypeVar("T")
 
 
 class ProgressReader:
@@ -325,6 +328,7 @@ def group_experiments(
     name_cb: Optional[Callable[[Path], str]] = None,
     exclude_error_experiments: bool = True,
     log_fname: str = "progress.csv",
+    verbose: bool = True,
 ) -> Dict[str, List[Path]]:
     """Create dict with key (exp name), value (list of indiv experiment dirs).
 
@@ -400,14 +404,24 @@ def group_experiments(
     base_dirs = list({k: None for k in base_dirs})
 
     progress_files: List[Path] = []
-    for d in base_dirs:
+
+    def _make_iter(_iterable: Iterable[T]) -> Iterable[T]:
+        return tqdm.tqdm(_iterable) if verbose else _iterable
+
+    if verbose:
+        print('searching for progess files')
+
+    for d in _make_iter(base_dirs):
         progress_files += get_files(d, log_fname)
+
+    if verbose:
+        print('found progress files')
 
     out: Dict[str, List[Path]] = collections.defaultdict(list)
     error_files: List[str] = []
 
     # insert so that the dictionary is sorted according to modified time
-    for progress_file in progress_files:
+    for progress_file in _make_iter(progress_files):
         if (progress_file.parent / 'error.txt').exists():
             error_files.append(str(progress_file.parent))
 

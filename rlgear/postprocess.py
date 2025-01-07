@@ -1,4 +1,5 @@
 import collections
+import enum
 import difflib
 from pathlib import Path
 from typing import Iterable, List, Dict, Tuple, Optional, Sequence, \
@@ -198,6 +199,13 @@ def get_dataframes(
     return dfs
 
 
+class PlotType(enum.Enum):
+    MEAN = 0
+    INDIV = 1
+    PERCENTILE_LOW = 2
+    PERCENTILE_HIGH = 3
+
+
 # pylint: disable=too-many-locals
 def plot_progress(
     y_data_dfs: Dict[str, pd.DataFrame],
@@ -208,6 +216,7 @@ def plot_progress(
     x_data_dfs: Optional[Dict[str, pd.DataFrame]] = None,
     stats_include_nan: bool = False,
     line_width: float = 2.0,
+    plot_cb: Optional[Callable[[PlotType, dict[str, Any]], dict[str, Any]]] = None,
 ) -> go.Figure:
     """Create plotly figure based on data.
 
@@ -257,9 +266,14 @@ def plot_progress(
     def _make_transparency(_color: str, _alpha: float) -> str:
         return f'rgba({_color[4:-1]}, {_alpha})'
 
-    def _plot(_x: Any, _y: Any, **_kwargs: Any) -> go.Scatter:
+    def _plot(_plot_type: PlotType, _x: Any, _y: Any, **_kwargs: Any) -> go.Scatter:
         _nan_mask = np.logical_or(~np.isnan(_y), ~np.isnan(_x))
-        return fig.add_trace(go.Scatter(x=_x[_nan_mask], y=_y[_nan_mask], **_kwargs))
+        _kwargs["x"] = _x[_nan_mask]
+        _kwargs["y"] = _y[_nan_mask]
+        if plot_cb is not None:
+            _kwargs = plot_cb(_plot_type, _kwargs)
+
+        return fig.add_trace(go.Scatter(**_kwargs))
 
     if x_data_dfs:
         assert set(x_data_dfs) == set(y_data_dfs), (
@@ -281,6 +295,7 @@ def plot_progress(
             nan_mask = np.all(~np.isnan(df.values), axis=1)
 
         _plot(
+            PlotType.MEAN,
             x_vals[nan_mask], df[nan_mask].mean(axis=1), name=name, showlegend=True,
             line_color=color, line_width=line_width, mode='lines',
             hoverlabel_namelength=-1,
@@ -293,6 +308,7 @@ def plot_progress(
                 if x_data_dfs:
                     x_vals = x_data_dfs[name][col]
                 _plot(
+                    PlotType.INDIV,
                     x_vals, df[col], name=col, showlegend=False,
                     line_color=clr, mode='lines',
                     hoverlabel_namelength=-1,
@@ -305,6 +321,7 @@ def plot_progress(
             line_clr = _make_transparency(color, 0.0)
 
             _plot(
+                PlotType.PERCENTILE_LOW,
                 x_vals[nan_mask], df[nan_mask].quantile(percentiles[0], axis=1),
                 showlegend=False, line_color=line_clr, mode='lines',
                 name=f'{name}-{round(100 * percentiles[0])}%',
@@ -312,6 +329,7 @@ def plot_progress(
                 legendgroup=name,
             )
             _plot(
+                PlotType.PERCENTILE_HIGH,
                 x_vals[nan_mask], df[nan_mask].quantile(percentiles[1], axis=1),
                 showlegend=False, line_color=line_clr, mode='lines',
                 name=f'{name}-{round(100 * percentiles[1])}%',

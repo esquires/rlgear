@@ -147,8 +147,25 @@ class ProgressReader:
                     _print_suggestions(temp_tag, avail_tags)
                 print(str(exp))
             else:
-                filtered_names.append(names[i] if names else exp.name)
+                new_name = names[i] if names else exp.name
+                try:
+                    repeated_idx = filtered_names.index(new_name)
+                except ValueError:
+                    pass
+                else:
+                    msg = (
+                        'Found repeated names in experiments. '
+                        'Changing the "names" argument to ProgressReader.get_progress '
+                        "will likely fix this. "
+                        "Alternatively, you may have inadvertently included unintended "
+                        "experiments. The repeat is in experiments\n"
+                        f"{experiments[repeated_idx]} and\n{exp}"
+                    )
+                    raise IndexError(msg)
+                filtered_names.append(new_name)
+
                 dfs.append(df)
+
 
         if only_complete_data:
             _shorten_dfs(dfs)

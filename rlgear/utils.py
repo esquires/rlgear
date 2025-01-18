@@ -13,7 +13,7 @@ import pprint
 import subprocess as sp
 from pathlib import Path
 from typing import (
-    Iterable, Union, Dict, Optional, Any, TypedDict, TypeVar, List, Dict, Union, Tuple
+    Iterable, Dict, Optional, Any, TypedDict, TypeVar, List, Dict, Union, Tuple
 )
 import numpy as np
 
@@ -902,3 +902,13 @@ class Profiler:
             normalized_times = {k: v / T for k, v in raw_times.items()}
             return normalized_times
 
+
+def check_eq_sets(set1: Iterable[Any], set2: Iterable[Any]) -> None:
+    set1 = set(set1)
+    set2 = set(set2)
+    msg = ""
+    if set1 - set2:
+        msg += f"set1 has extra keys {set1 - set2}. "
+    if set2 - set1:
+        msg += f"{set2} expects keys {set2 - set1}. "
+    assert set1 == set2, msg

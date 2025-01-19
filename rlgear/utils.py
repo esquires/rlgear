@@ -280,15 +280,6 @@ class MetaWriter():
         if self.print_log_dir:
             print(f'log dir: {logdir}')
 
-        if self.symlink_dir:
-            link_tgt = self.symlink_dir / 'latest'
-            link_tgt.unlink(missing_ok=True)
-
-            try:
-                link_tgt.symlink_to(logdir, target_is_directory=True)
-            except FileExistsError:
-                pass
-
         meta_dir = (Path(logdir) / 'meta').resolve()
 
         if meta_dir.exists():
@@ -320,6 +311,15 @@ class MetaWriter():
             for d in self.dirs:
                 shutil.copytree(
                     d, meta_dir / 'dirs' / d.name, ignore=ignore)
+
+        if self.symlink_dir:
+            link_tgt = self.symlink_dir / 'latest'
+            link_tgt.unlink(missing_ok=True)
+
+            try:
+                link_tgt.symlink_to(logdir, target_is_directory=True)
+            except FileExistsError:
+                pass
 
         with open(meta_dir / 'args.txt', 'w', encoding='UTF-8') as f:
             f.write(self.cmd)

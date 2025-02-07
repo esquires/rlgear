@@ -15,19 +15,21 @@ setup(
         "plotly",
         "gym",
         "dataclasses",
-        # ray packages
-        "ray>=2.0.0",
-        # extra rllib dependencies that don't come through automatically
-        "crc32c",
-        "requests",
-        "dm-tree",
-        "lz4",
-        "tqdm",
-        "scikit-image",
-        "tensorboardX",
-        "tqdm",
     ],
     extras_require={
+        "ray": [
+            # ray packages
+            "ray>=2.0.0",
+            # extra rllib dependencies that don't come through automatically
+            "crc32c",
+            "requests",
+            "dm-tree",
+            "lz4",
+            "tqdm",
+            "scikit-image",
+            "tensorboardX",
+            "tqdm",
+        ],
         "test": [
             "pytest",
             "flake8",

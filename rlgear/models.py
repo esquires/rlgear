@@ -32,55 +32,6 @@ def make_fc_layers(
     return layers
 
 
-IntOrSeq = Union[int, Sequence, np.ndarray]
-
-# this is declared because often we want to allow Union input but this
-# is generally a bad idea
-# https://github.com/python/mypy/issues/1693
-# so this is declared so we can imply meaning without causing mypy errors
-SameAsInput = Any
-
-
-def out_shape(
-    inp_shape: IntOrSeq, kernel: IntOrSeq, stride: IntOrSeq = 1, padding: IntOrSeq = 0
-) -> SameAsInput:
-    """Apply convolution arithmetic.
-
-    https://arxiv.org/pdf/1603.07285.pdf
-    """
-    # handle scalars or numpy arrays
-    # https://stackoverflow.com/a/29319864
-    i = np.asarray(inp_shape)
-    p = np.asarray(padding)
-    k = np.asarray(kernel)
-    s = np.asarray(stride)
-    scalar_input = False
-    if i.ndim == 0:
-        i = i[np.newaxis]
-        scalar_input = True
-
-    o = np.floor((i + 2 * p - k) / s) + 1
-    o = o.astype(np.int32)
-
-    return np.squeeze(o) if scalar_input else o
-
-
-def dqn_cnn(obs_shape: Sequence[int]) -> Tuple[List[nn.Module], List[int]]:
-    channels = [obs_shape[-1], 32, 64, 64]
-    kernels = [8, 4, 4]
-    strides = [4, 2, 2]
-
-    cnn_layers: List[nn.Module] = []
-    out_shp = np.asarray(obs_shape[:-1])
-    for in_c, out_c, k, s in zip(channels[:-1], channels[1:], kernels, strides):
-        out_shp = out_shape(np.asarray(out_shp), k, s)
-
-        cnn_layers.append(nn.Conv2d(in_c, out_c, kernel_size=k, stride=s))
-        cnn_layers.append(nn.ReLU())
-
-    return cnn_layers, out_shp.tolist() + [channels[-1]]
-
-
 class MLPNet(nn.Module):
     def __init__(
         self,

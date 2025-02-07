@@ -1,13 +1,25 @@
+import argparse
 import collections
-import enum
 import difflib
+import enum
+import tempfile
+import time
 from pathlib import Path
-from typing import Iterable, List, Dict, Tuple, Optional, Sequence, \
-    Any, Callable, TypeVar
-import tqdm
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    TypeVar,
+)
 
 import numpy as np
 import pandas as pd
+import tqdm
 
 try:
     import plotly
@@ -18,8 +30,8 @@ except (ModuleNotFoundError, ImportError):
     class go:  # type: ignore
         Figure = None
 
-from .utils import get_files
 
+from .utils import get_files
 
 T = TypeVar("T")
 
@@ -33,8 +45,8 @@ class ProgressReader:
     def get_progress(
         self,
         experiments: Iterable[Path],
-        x_tag: str = 'timesteps_total',
-        tag: str = 'episode_reward_mean',
+        x_tag: str = "timesteps_total",
+        tag: str = "episode_reward_mean",
         only_complete_data: bool = False,
         max_x: Optional[Any] = None,
         names: Optional[Sequence[str]] = None,
@@ -71,6 +83,7 @@ class ProgressReader:
             names will by default be ``["00000", "00001"]``
 
         """
+
         def _print_suggestions(_word: str, _possibilities: List[str]) -> None:
             _suggestions = difflib.get_close_matches(_word, _possibilities, n=5)
 
@@ -80,15 +93,14 @@ class ProgressReader:
                     print(_suggestion)
 
         def _merge_dfs(
-            _dfs: Sequence[pd.DataFrame],
-            _names: Optional[Sequence[str]] = None
+            _dfs: Sequence[pd.DataFrame], _names: Optional[Sequence[str]] = None
         ) -> pd.DataFrame:
 
             _df = _dfs[0]
             if len(_dfs) > 1:
                 for i, __df in enumerate(_dfs[1:]):
-                    _df = _df.join(__df, how='outer', rsuffix=f'_{i+1}')
-                _df.columns = _names or [f'values_{i}' for i in range(len(_dfs))]
+                    _df = _df.join(__df, how="outer", rsuffix=f"_{i+1}")
+                _df.columns = _names or [f"values_{i}" for i in range(len(_dfs))]
             return _df
 
         def _shorten_dfs(_dfs: Sequence[pd.DataFrame]) -> None:
@@ -116,7 +128,7 @@ class ProgressReader:
                     df = pd.read_csv(fname, low_memory=False, sep="\t")
                 except pd.errors.EmptyDataError:
                     if exp not in self.empty_cache:
-                        print(f'{exp} has empty {log_fname}, skipping')
+                        print(f"{exp} has empty {log_fname}, skipping")
                         self.empty_cache.add(exp)
                     continue
                 self.df_cache[fname] = df
@@ -137,7 +149,7 @@ class ProgressReader:
                 df = df[[temp_x_tag, temp_tag]].set_index(temp_x_tag)
             except KeyError:
 
-                print('-----------')
+                print("-----------")
                 print(f'Error setting index "{temp_x_tag}" and data col "{temp_tag}"')
                 if temp_x_tag not in avail_tags:
                     print(f"{temp_x_tag} not in available tags")
@@ -154,7 +166,7 @@ class ProgressReader:
                     pass
                 else:
                     msg = (
-                        'Found repeated names in experiments. '
+                        "Found repeated names in experiments. "
                         'Changing the "names" argument to ProgressReader.get_progress '
                         "will likely fix this. "
                         "Alternatively, you may have inadvertently included unintended "
@@ -165,7 +177,6 @@ class ProgressReader:
                 filtered_names.append(new_name)
 
                 dfs.append(df)
-
 
         if only_complete_data:
             _shorten_dfs(dfs)
@@ -225,6 +236,7 @@ class PlotType(enum.Enum):
 
 # pylint: disable=too-many-locals
 def plot_progress(
+    fig: go.Figure,
     y_data_dfs: Dict[str, pd.DataFrame],
     plot_indiv: bool = True,
     indiv_alpha: float = 0.2,
@@ -234,11 +246,12 @@ def plot_progress(
     stats_include_nan: bool = False,
     line_width: float = 2.0,
     plot_cb: Optional[Callable[[PlotType, dict[str, Any]], dict[str, Any]]] = None,
-) -> go.Figure:
+) -> None:
     """Create plotly figure based on data.
 
     Parameters
     ----------
+    fig : plotly.graph_objects.Figure
     y_data_dfs : dict[str, pandas.DataFrame]
         keys provide labels, values are what to plot
     plot_indiv : bool, default True
@@ -257,11 +270,6 @@ def plot_progress(
     stats_include_nan : bool, default False
         when computing the mean or percentiles, whether to include rows in the dataframe
         that include nan
-
-    Returns
-    -------
-    fig : plotly.graph_objects.Figure
-
     """
     colors = plotly.colors.DEFAULT_PLOTLY_COLORS
 
@@ -269,19 +277,14 @@ def plot_progress(
     assert 0 <= percentile_alpha <= 1
 
     if percentiles is not None:
-        assert len(percentiles) == 2 and \
-            0 <= percentiles[0] <= 1 and \
-            0 <= percentiles[1] <= 1, "percentiles must be between 0 and 1"
-
-    fig = go.Figure(layout=go.Layout(
-        showlegend=True,
-        hovermode='x',
-        hoverlabel_bgcolor='rgba(255, 255, 255, 0.5)',
-        font_size=24,
-    ))
+        assert (
+            len(percentiles) == 2
+            and 0 <= percentiles[0] <= 1
+            and 0 <= percentiles[1] <= 1
+        ), "percentiles must be between 0 and 1"
 
     def _make_transparency(_color: str, _alpha: float) -> str:
-        return f'rgba({_color[4:-1]}, {_alpha})'
+        return f"rgba({_color[4:-1]}, {_alpha})"
 
     def _plot(_plot_type: PlotType, _x: Any, _y: Any, **_kwargs: Any) -> go.Scatter:
         _nan_mask = np.logical_or(~np.isnan(_y), ~np.isnan(_x))
@@ -294,9 +297,10 @@ def plot_progress(
 
     if x_data_dfs:
         assert set(x_data_dfs) == set(y_data_dfs), (
-            f'keys for x_data_dfs and y_data_dfs do not match:\n'
+            f"keys for x_data_dfs and y_data_dfs do not match:\n"
             f'x_data_dfs keys: {", ".join(x_data_dfs)}\n'
-            f'y_data_dfs keys: {", ".join(y_data_dfs)}')
+            f'y_data_dfs keys: {", ".join(y_data_dfs)}'
+        )
 
     for i, (name, df) in enumerate(y_data_dfs.items()):
         if x_data_dfs:
@@ -313,8 +317,13 @@ def plot_progress(
 
         _plot(
             PlotType.MEAN,
-            x_vals[nan_mask], df[nan_mask].mean(axis=1), name=name, showlegend=True,
-            line_color=color, line_width=line_width, mode='lines',
+            x_vals[nan_mask],
+            df[nan_mask].mean(axis=1),
+            name=name,
+            showlegend=True,
+            line_color=color,
+            line_width=line_width,
+            mode="lines",
             hoverlabel_namelength=-1,
             legendgroup=name,
         )
@@ -326,10 +335,14 @@ def plot_progress(
                     x_vals = x_data_dfs[name][col]
                 _plot(
                     PlotType.INDIV,
-                    x_vals, df[col], name=col, showlegend=False,
-                    line_color=clr, mode='lines',
+                    x_vals,
+                    df[col],
+                    name=col,
+                    showlegend=False,
+                    line_color=clr,
+                    mode="lines",
                     hoverlabel_namelength=-1,
-                    hoverinfo='none',
+                    hoverinfo="none",
                     legendgroup=name,
                 )
 
@@ -339,19 +352,28 @@ def plot_progress(
 
             _plot(
                 PlotType.PERCENTILE_LOW,
-                x_vals[nan_mask], df[nan_mask].quantile(percentiles[0], axis=1),
-                showlegend=False, line_color=line_clr, mode='lines',
-                name=f'{name}-{round(100 * percentiles[0])}%',
-                hoverlabel_namelength=-1, hoverinfo='none',
+                x_vals[nan_mask],
+                df[nan_mask].quantile(percentiles[0], axis=1),
+                showlegend=False,
+                line_color=line_clr,
+                mode="lines",
+                name=f"{name}-{round(100 * percentiles[0])}%",
+                hoverlabel_namelength=-1,
+                hoverinfo="none",
                 legendgroup=name,
             )
             _plot(
                 PlotType.PERCENTILE_HIGH,
-                x_vals[nan_mask], df[nan_mask].quantile(percentiles[1], axis=1),
-                showlegend=False, line_color=line_clr, mode='lines',
-                name=f'{name}-{round(100 * percentiles[1])}%',
-                hoverlabel_namelength=-1, hoverinfo='none',
-                fill='tonexty', fillcolor=fill_clr,
+                x_vals[nan_mask],
+                df[nan_mask].quantile(percentiles[1], axis=1),
+                showlegend=False,
+                line_color=line_clr,
+                mode="lines",
+                name=f"{name}-{round(100 * percentiles[1])}%",
+                hoverlabel_namelength=-1,
+                hoverinfo="none",
+                fill="tonexty",
+                fillcolor=fill_clr,
                 legendgroup=name,
             )
 
@@ -429,8 +451,7 @@ def group_experiments(
     if name_cb is None:
 
         def name_cb(abs_path_to_progress_file: Path) -> str:
-            return '_'.join(
-                Path(abs_path_to_progress_file).parent.name.split('_')[:3])
+            return "_".join(Path(abs_path_to_progress_file).parent.name.split("_")[:3])
 
     assert name_cb is not None
 
@@ -444,20 +465,20 @@ def group_experiments(
         return tqdm.tqdm(_iterable) if verbose else _iterable
 
     if verbose:
-        print('searching for progess files')
+        print("searching for progess files")
 
     for d in _make_iter(base_dirs):
         progress_files += get_files(d, log_fname)
 
     if verbose:
-        print('found progress files')
+        print("found progress files")
 
     out: Dict[str, List[Path]] = collections.defaultdict(list)
     error_files: List[str] = []
 
     # insert so that the dictionary is sorted according to modified time
     for progress_file in _make_iter(progress_files):
-        if (progress_file.parent / 'error.txt').exists():
+        if (progress_file.parent / "error.txt").exists():
             error_files.append(str(progress_file.parent))
 
             if exclude_error_experiments:
@@ -468,8 +489,8 @@ def group_experiments(
             out[name].append(progress_file.parent)
 
     if error_files:
-        print('Errors detected in runs:')
-        print('\n'.join(error_files))
+        print("Errors detected in runs:")
+        print("\n".join(error_files))
 
     return out
 
@@ -508,3 +529,180 @@ def smooth(values: Sequence[float], weight: float) -> Sequence[float]:
         smoothed += values[L:].tolist()
 
     return smoothed
+
+
+def make_fig(layout_kwargs: dict[str, Any], axes_kwargs: dict[str, Any]) -> go.Figure:
+
+    layout_defaults = {
+        "showlegend": True,
+        "hovermode": "x",
+        "hoverlabel_bgcolor": "rgba(255, 255, 255, 0.5)",
+        "font_size": 24,
+        "plot_bgcolor": "rgba(0,0,0,0)",
+        "paper_bgcolor": "rgba(0,0,0,0)",
+    }
+
+    layout_defaults.update(layout_kwargs)
+
+    fig = go.Figure(layout=go.Layout(**layout_defaults))
+
+    axes_defaults = {
+        "showline": True,
+        "linewidth": 2,
+        "linecolor": "black",
+        "showgrid": False,
+        "ticks": "inside",
+    }
+    axes_defaults.update(axes_kwargs)
+    fig.update_xaxes(title_standoff=4, **axes_defaults)
+    fig.update_yaxes(title_standoff=7, **axes_defaults)
+    return fig
+
+
+def add_plot_parser_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--output",
+        nargs="+",
+        choices=["show", "html", "png", "jpeg", "pdf"],
+        required=True,
+    )
+    parser.add_argument("--out_dir")
+
+
+def avoid_mathjax_in_pdf():
+    # https://github.com/plotly/plotly.py/issues/3469#issuecomment-993565250
+    # to avoid mathjax in pdf
+    print("writing dummy pdf to avoid mathjax warning")
+
+    out_dir = Path(tempfile.mkdtemp(prefix="rlgear-"))
+    dummy_output = out_dir / "dummy_img.pdf"
+
+    fig = go.Figure()
+    fig.add_scatter(x=[1, 2], y=[1, 2])
+    fig.write_image(dummy_output, format="pdf")
+    time.sleep(2)
+    dummy_output.unlink()
+    out_dir.rmdir()
+    print("done writing dummy pdf")
+
+
+def prep_plots(output: Optional[list[str]]) -> Optional[Path]:
+    output = output or []
+    if "html" in output or "png" in output or "pdf" in output or "jpeg" in output:
+
+        out_dir = Path(out_dir)
+        assert not out_dir.exists(), f"{out_dir} already exists"
+
+        script_dir = Path(__file__).parent
+        repo_roots = {
+            "..": {
+                "base_commit": "origin/main",
+                "check_clean": False,
+                "copy_repo": False,
+            }
+        }
+
+        MetaWriter(
+            repo_roots=repo_roots,
+            dirs=[script_dir],
+            ignore_patterns=["latest/", "__pycache__", "*.prof"],
+            symlink_dir=None,
+        ).write(out_dir)
+
+        if "pdf" in output:
+            # https://github.com/plotly/plotly.py/issues/3469#issuecomment-993565250
+            # to avoid mathjax in pdf
+            print("writing dummy pdf to avoid mathjax warning")
+            dummy_output = "/tmp/dummy_img.pdf"
+            fig = go.Figure()
+            fig.add_scatter(x=[1, 2], y=[1, 2])
+            fig.write_image(dummy_output, format="pdf")
+            time.sleep(2)
+            print("done writing dummy pdf")
+
+    if out_dir is not None:
+        return Path(out_dir)
+    else:
+        return out_dir
+
+
+def write_figure(
+    out_dir: Optional[Path],
+    fig: go.Figure,
+    name: str,
+    output: Optional[list[str]],
+    separate_legend: bool,
+    title: str,
+    img_width: int = 640,
+    img_height: int = 480,
+    pdf_width: int = 300,
+    pdf_height: int = 150,
+) -> None:
+    name = name.replace(" ", "_")
+
+    output = output or []
+
+    if "show" in output:
+        fig.update_layout(title_text=title)
+        fig.show()
+        fig.update_layout(title_text=None)
+
+    if out_dir is not None:
+
+        for dir_type in output:
+            if dir_type != "show":
+                (out_dir / dir_type).mkdir(exist_ok=True, parents=True)
+
+        if "html" in output:
+            # https://stackoverflow.com/a/73071558
+            fig.write_html(out_dir / f"html/{name}.html", include_plotlyjs="cdn")
+
+        fig.update_layout(
+            # https://www.geeksforgeeks.org/how-to-position-legends-inside-a-plot-in-plotly-python/
+            legend=dict(
+                orientation="h",
+                x=0.2,
+                y=-0.4,  # value must be between 0 to 1.
+                traceorder="normal",
+                font=dict(family="sans-serif", size=15, color="black"),
+            ),
+        )
+        fig.update_layout(font_color="black")
+
+        for out in ["png", "jpeg"]:
+            out_file = out_dir / out / f"{name}.{out}"
+
+            if out in output:
+                fig.update_layout(
+                    font_size=10,
+                    margin=dict(l=0, r=0, t=0, b=0),
+                )
+                fig.write_image(out_file, width=640, height=480)
+
+        if "pdf" in output:
+            # for d in fig.data:
+            #     if not isinstance(d, go.Heatmap):
+            #         d.line.width = 1
+
+            fig.update_layout(
+                showlegend=not separate_legend,
+                font_size=10,
+                margin=dict(l=0, r=0, t=0, b=0),
+                legend={
+                    "orientation": "h",
+                    "font": dict(family="sans-serif", size=10, color="black"),
+                    "x": 0,
+                    "y": 100,
+                },
+            )
+            fig.write_image(out_dir / f"pdf/{name}.pdf", width=pdf_width, height=pdf_height)
+
+            if separate_legend:
+
+                fig.update_layout(
+                    showlegend=True,
+                    font_size=10,
+                )
+                fig.write_image(
+                    out_dir / f"pdf/legend-{title}.pdf", width=pdf_width, height=pdf_height
+                )

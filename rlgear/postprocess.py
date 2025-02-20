@@ -639,6 +639,7 @@ def write_figure(
     pdf_height: int = 150,
 ) -> None:
     name = name.replace(" ", "_")
+    name = name.replace("%", "pct")
 
     output = output or []
 

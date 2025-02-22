@@ -703,6 +703,8 @@ def write_figure(
                 fig.update_layout(
                     showlegend=True,
                     font_size=10,
+                    xaxis_visible=False,
+                    yaxis_visible=False,
                 )
                 fig.write_image(
                     out_dir / f"pdf/legend-{title}.pdf", width=pdf_width, height=pdf_height

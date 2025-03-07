@@ -380,12 +380,16 @@ def plot_progress(
     return fig
 
 
+IGNORE: str = "_ignore"
+
+
 def group_experiments(
     base_dirs: Iterable[Path],
     name_cb: Optional[Callable[[Path], str]] = None,
     exclude_error_experiments: bool = True,
     log_fname: str = "progress.csv",
     verbose: bool = True,
+    ignore: Optional[str | list[str]] = IGNORE,
 ) -> Dict[str, List[Path]]:
     """Create dict with key (exp name), value (list of indiv experiment dirs).
 
@@ -476,6 +480,9 @@ def group_experiments(
     out: Dict[str, List[Path]] = collections.defaultdict(list)
     error_files: List[str] = []
 
+    if isinstance(ignore, str):
+        ignore = [ignore]
+
     # insert so that the dictionary is sorted according to modified time
     for progress_file in _make_iter(progress_files):
         if (progress_file.parent / "error.txt").exists():
@@ -485,6 +492,10 @@ def group_experiments(
                 continue
 
         name = name_cb(progress_file)
+
+        if ignore is not None and name in ignore:
+            continue
+
         if progress_file.parent not in out[name]:
             out[name].append(progress_file.parent)
 
@@ -566,7 +577,6 @@ def add_plot_parser_args(parser: argparse.ArgumentParser) -> None:
         choices=["show", "html", "png", "jpeg", "pdf"],
         required=True,
     )
-    parser.add_argument("--out_dir")
 
 
 def avoid_mathjax_in_pdf():
@@ -707,5 +717,5 @@ def write_figure(
                     yaxis_visible=False,
                 )
                 fig.write_image(
-                    out_dir / f"pdf/legend-{title}.pdf", width=pdf_width, height=pdf_height
+                    out_dir / f"pdf/legend-{name}.pdf", width=pdf_width, height=pdf_height
                 )

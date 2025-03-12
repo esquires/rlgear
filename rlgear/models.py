@@ -1,6 +1,7 @@
 from typing import Any, Iterable, List, Optional, Sequence, Tuple, Type, Union
+from pathlib import Path
+import pickle
 
-import numpy as np
 import torch
 from torch import nn
 
@@ -75,3 +76,65 @@ def run_backprop(optimizer: torch.optim.Adam, loss: torch.Tensor) -> None:
     optimizer.zero_grad()
     loss.backward()  # type: ignore
     optimizer.step()
+
+
+
+class Saver:
+    def __init__(self, interval: int, log_dir: Path, max_num: int):
+        self.interval = interval
+        self.log_dir = log_dir
+        self.max_num = max_num
+
+        self.last_elapsed = 0
+        self.save_files: list[tuple[Path, Optional[Path]]] = []
+
+    def save(
+        self,
+        elapsed: int,
+        modules: list[torch.nn.Module | torch.optim.Optimizer],
+        pickle_val: Any = None,
+    ) -> None:
+
+        if elapsed - self.last_elapsed < self.interval:
+            return
+
+        self.last_elapsed = elapsed
+        state_dicts = [module.state_dict() for module in modules]
+
+        save_file = self.log_dir / f"model_{elapsed:06d}"
+        print(f"saving to {save_file}")
+        torch.save(state_dicts, save_file)
+
+        if pickle_val is not None:
+            pickle_file = save_file.with_suffix(".pkl")
+            with open(pickle_file, "wb") as f:
+                pickle.dump(pickle_val, f)
+        else:
+            pickle_file = None
+
+        self.save_files.append((save_file, pickle_file))
+
+        while len(self.save_files) > self.max_num:
+            rm_file, rm_pkl_file = self.save_files.pop(0)
+            print(f"removing {rm_file}")
+            rm_file.unlink(missing_ok=True)
+
+            if rm_pkl_file is not None:
+                print(f"removing {rm_pkl_file}")
+                rm_pkl_file.unlink(missing_ok=True)
+
+    @staticmethod
+    def load(model_path: Path, modules: list[torch.nn.Module]) -> Any:
+        state_dicts = torch.load(model_path, weights_only=True)
+
+        for state_dict, module in zip(state_dicts, modules):
+            module.load_state_dict(state_dict)
+
+        pickle_path = model_path.with_suffix('.pkl')
+        if pickle_path.exists():
+            with open(pickle_path, 'rb') as f:
+                pickle_val = pickle.load(f)
+        else:
+            pickle_val = None
+
+        return pickle_val

@@ -1,4 +1,5 @@
 import tempfile
+import collections
 import sys
 import argparse
 import socket
@@ -873,34 +874,30 @@ def add_rlgear_args(parser: argparse.ArgumentParser) \
     return parser
 
 
+class _Timer:
+    def __init__(self, elapsed_times: dict[str, list[float]], key: str):
+        # note: not thread safe
+        self.elapsed_times = elapsed_times
+        self.key = key
+        self.beg_time = None
+
+    def __enter__(self) -> None:  # pylint: disable=no-self-argument
+        self.beg_time = time.perf_counter()
+
+    def __exit__(self, *args) -> None:  # pylint: disable=no-self-argument
+        elapsed_time = time.perf_counter() - self.beg_time
+        self.elapsed_times[self.key].append(elapsed_time)
+
+
 class Profiler:
     def __init__(self) -> None:
-        self.beg_times: Dict[Any, float] = {}
-        self.end_times: Dict[Any, float] = {}
-        self.overall_beg_time = time.perf_counter()
-        self.overall_end_time: Optional[float] = None
+        self.elapsed_times: dict[str, list[float]] = collections.defaultdict(list)
 
-    def add(self, key: Any) -> Any:  # pylint: disable=no-self-use
-        class _Timer:
-            def __enter__(self_timer) -> None:  # pylint: disable=no-self-argument
-                self.beg_times[key] = time.perf_counter()
+    def add(self, key: str) -> _Timer:
+        return _Timer(self.elapsed_times, key)
 
-            def __exit__(self_timer, *args) -> None:  # pylint: disable=no-self-argument
-                self.end_times[key] = time.perf_counter()
-        return _Timer()
-
-    def report(self, normalize: bool) -> Dict[Any, float]:
-        if self.overall_end_time is None:
-            self.overall_end_time = time.perf_counter()
-
-        T = self.overall_end_time - self.overall_beg_time
-        raw_times = {k: self.end_times[k] - self.beg_times[k] for k in self.beg_times}
-
-        if not normalize:
-            return raw_times
-        else:
-            normalized_times = {k: v / T for k, v in raw_times.items()}
-            return normalized_times
+    def summarize(self) -> dict[str, float]:
+        return {k: np.sum(v) for k, v in self.elapsed_times.items()}
 
 
 def check_eq_sets(set1: Iterable[Any], set2: Iterable[Any]) -> None:

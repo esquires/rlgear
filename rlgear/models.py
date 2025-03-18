@@ -1,6 +1,6 @@
-from typing import Any, Iterable, List, Optional, Sequence, Tuple, Type, Union
-from pathlib import Path
 import pickle
+from pathlib import Path
+from typing import Any, Iterable, List, Optional, Sequence, Tuple, Type, Union
 
 import torch
 from torch import nn
@@ -78,7 +78,6 @@ def run_backprop(optimizer: torch.optim.Adam, loss: torch.Tensor) -> None:
     optimizer.step()
 
 
-
 class Saver:
     def __init__(self, interval: int, log_dir: Path, max_num: int):
         self.interval = interval
@@ -125,14 +124,20 @@ class Saver:
 
     @staticmethod
     def load(model_path: Path, modules: list[torch.nn.Module]) -> Any:
+
+        if model_path.is_dir():
+            model_path = [
+                p for p in sorted(model_path.glob("model_*")) if not p.suffix == ".pkl"
+            ][-1]
+
         state_dicts = torch.load(model_path, weights_only=True)
 
         for state_dict, module in zip(state_dicts, modules):
             module.load_state_dict(state_dict)
 
-        pickle_path = model_path.with_suffix('.pkl')
+        pickle_path = model_path.with_suffix(".pkl")
         if pickle_path.exists():
-            with open(pickle_path, 'rb') as f:
+            with open(pickle_path, "rb") as f:
                 pickle_val = pickle.load(f)
         else:
             pickle_val = None

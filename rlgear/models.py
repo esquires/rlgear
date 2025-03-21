@@ -100,6 +100,15 @@ class Saver:
         self.last_elapsed = elapsed
         state_dicts = [module.state_dict() for module in modules]
 
+        while len(self.save_files) > self.max_num - 1:
+            rm_file, rm_pkl_file = self.save_files.pop(0)
+            print(f"removing {rm_file}")
+            rm_file.unlink(missing_ok=True)
+
+            if rm_pkl_file is not None:
+                print(f"removing {rm_pkl_file}")
+                rm_pkl_file.unlink(missing_ok=True)
+
         save_file = self.log_dir / f"model_{elapsed:06d}"
         print(f"saving to {save_file}")
         torch.save(state_dicts, save_file)
@@ -113,22 +122,18 @@ class Saver:
 
         self.save_files.append((save_file, pickle_file))
 
-        while len(self.save_files) > self.max_num:
-            rm_file, rm_pkl_file = self.save_files.pop(0)
-            print(f"removing {rm_file}")
-            rm_file.unlink(missing_ok=True)
-
-            if rm_pkl_file is not None:
-                print(f"removing {rm_pkl_file}")
-                rm_pkl_file.unlink(missing_ok=True)
-
     @staticmethod
     def load(model_path: Path, modules: list[torch.nn.Module]) -> Any:
 
         if model_path.is_dir():
-            model_path = [
+            model_paths = [
                 p for p in sorted(model_path.glob("model_*")) if not p.suffix == ".pkl"
-            ][-1]
+            ]
+
+            if not model_paths:
+                raise RuntimeError(f"could not find models in {model_path}")
+
+            model_path = model_paths[-1]
 
         state_dicts = torch.load(model_path, weights_only=True)
 

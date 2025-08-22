@@ -9,7 +9,6 @@ setup(
     zip_safe=False,
     packages=['rlgear'],
     install_requires=[
-        "git-python",
         "tabulate",
         "pandas",
         "plotly",

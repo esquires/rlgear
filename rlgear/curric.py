@@ -107,11 +107,8 @@ class Curriculum:
             if key not in self.info_hx:
                 self.info_hx[key] = []
 
-            try:
-                if not np.isnan(value):
-                    self.info_hx[key].append(value)
-            except:
-                import lvdb; lvdb.set_trace()  # fmt: skip
+            if not np.isnan(value):
+                self.info_hx[key].append(value)
 
         if self.idx >= len(self.settings) - 1:
             return False

@@ -24,6 +24,14 @@ import yaml
 StrOrPath = Union[str, Path]
 
 
+def find_git_repo(repo_root: Path) -> Optional[Path]:
+    while not (repo_root / ".git").exists():
+        if str(repo_root) == "/":
+            return None
+        repo_root = repo_root.parent
+    return repo_root
+
+
 # pylint: disable=too-many-instance-attributes,too-many-arguments
 class MetaWriter():
     """Log information required to recreate a run of software.
@@ -172,68 +180,71 @@ class MetaWriter():
 
         self.orig_dir = Path(os.getcwd())
 
-        self.cmd = self._rel_path(Path(sys.executable)) \
-            + " " + " ".join(sys.argv)
+        self.cmd = self._rel_path(Path(sys.executable)) + " " + " ".join(sys.argv)
 
         self.git_info = {}
-        try:
-            # pylint: disable=import-outside-toplevel
-            import git
-        except ImportError:
-            pass
-        else:
-            # avoids mypy error:
-            # Trying to read deleted variable "exc"
-            git_exc: Any = git.exc  # type: ignore
 
-            for repo_root, repo_config in self.repo_roots.items():
+        for repo_root, repo_config in self.repo_roots.items():
+            git_data = self._get_git_data(Path(repo_root), repo_config)
+            if git_data is not None:
+                repo_dir, data = git_data
+                self.git_info[repo_dir.absolute().stem] = data
 
-                try:
-                    repo = git.Repo(repo_root, search_parent_directories=True)
-                    cwd = repo.working_dir
-                    assert cwd is not None
+    def _get_git_data(
+        self, repo_root: str, repo_config: dict[str, Any]
+    ) -> Optional[tuple[Path, dict[str, Any]]]:
+        # pylint: disable=import-outside-toplevel
+        if not Path(repo_root).exists():
+            repo_root = repo_root.absolute()
+            print(f'"{repo_root}" does not exist, skipping')
+            return None
 
-                    def _get(_cmd: Iterable[str]) -> str:
-                        # pylint: disable=cell-var-from-loop
-                        return sp.check_output(
-                            _cmd, cwd=cwd).decode('UTF-8')  # type: ignore
+        repo_dir = find_git_repo(repo_root)
 
-                    diff = _get(['git', 'diff'])
-                    base_commit = repo_config['base_commit']
-                    base = _get(
-                        ['git', 'merge-base', 'HEAD', base_commit]).strip()
+        if repo_dir is None:
+            print(f'could not find directory for "{repo_root}", skipping.')
+            return None
 
-                    patch = _get(['git', 'format-patch', '--stdout', base])
-                    base_commit_hash = _get(
-                        ['git', 'rev-parse', '--short', base]).strip()
-                    short_commit = _get(
-                        ['git', 'rev-parse', '--short', 'HEAD']).strip()
+        def _get(_cmd: list[str], _prev_output: Optional[str]) -> Optional[str]:
+            if _prev_output is None:
+                return None
 
-                # pylint: disable=no-member
-                except (git_exc.InvalidGitRepositoryError,
-                        git_exc.NoSuchPathError,
-                        sp.CalledProcessError) as e:
-                    print(e)
-                    print((f'ignoring the previous git error for {repo_root}. '
-                           'This git repo will not be saved.'))
-                else:
-                    if repo_config['check_clean']:
-                        assert not repo.head.commit.diff(None), \
-                            ("check_clean is set to True for "
-                             f"{repo.common_dir} but the status is not clean")
+            try:
+                return sp.check_output(_cmd, cwd=repo_dir).decode('UTF-8')
+            except sp.CalledProcessError as _e:
+                _cmd_str = " ".join(_cmd)
+                print((
+                    f'For repo "{repo_root}", received error "{_e}" '
+                    f'command string: "{_cmd_str}"'
+                ))
+                return None
 
-                    self.git_info[Path(cwd).stem] = {
-                        'commit': repo.commit().name_rev,
-                        'commit_short': short_commit,
-                        'patch': patch,
-                        'patch_fname':
-                            f'patch_rel_to_{base_commit_hash}.patch',
-                        'base_commit_hash': base_commit_hash,
-                        'diff': diff,
-                        'repo_dir': Path(cwd),
-                        'copy_repo': repo_config['copy_repo'],
-                        'ignore': repo_config.get('ignore', [])
-                    }
+        def _strip(_output: Optional[str]) -> Optional[str]:
+            return None if _output is None else _output.strip()
+
+        base_commit = repo_config['base_commit']
+        diff = _get(["git", "diff"], "")
+        base = _strip(_get(['git', 'merge-base', 'HEAD', base_commit], diff))
+        patch = _get(['git', 'format-patch', '--stdout', base], base)
+        base_commit_hash = _strip(_get( ['git', 'rev-parse', '--short', base], patch))
+        commit = _strip(_get(['git', 'rev-parse', 'HEAD'], base_commit_hash))
+        short_commit = _strip(_get(['git', 'rev-parse', '--short', 'HEAD'], commit))
+
+        if not short_commit:
+            return None
+
+        data = {
+            'commit': commit,
+            'commit_short': short_commit,
+            'patch': patch,
+            'patch_fname': f'patch_rel_to_{base_commit_hash}.patch',
+            'base_commit_hash': base_commit_hash,
+            'diff': diff,
+            'repo_dir': repo_dir,
+            'copy_repo': repo_config['copy_repo'],
+            'ignore': repo_config.get('ignore', [])
+        }
+        return repo_dir, data
 
     # pylint: disable=too-many-locals,too-many-statements, too-many-branches
     def write(self, logdir: StrOrPath) -> None:
@@ -330,7 +341,7 @@ class MetaWriter():
 
         for repo_name, repo_data in self.git_info.items():
             meta_repo_dir = meta_dir / repo_name
-            meta_repo_dir.mkdir(exist_ok=True)
+            meta_repo_dir.mkdir(exist_ok=True, parents=True)
 
             with open(meta_repo_dir / (repo_name + '_commit.txt'),
                       'w', encoding='UTF-8') as f:
@@ -724,8 +735,7 @@ def write_metadata(
 
     if search_dirs is None:
         # pylint: disable=import-outside-toplevel
-        import git
-        search_dirs = git.Repo(Path.cwd(), search_parent_directories=True).working_dir
+        search_dirs = find_git_repo(Path.cwd())
 
     meta_writer = from_yaml(
         yaml_file, search_dirs, yaml_file.stem, **meta_writer_kwargs

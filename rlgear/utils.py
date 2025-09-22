@@ -191,44 +191,39 @@ class MetaWriter():
                 self.git_info[repo_dir.absolute().stem] = data
 
     def _get_git_data(
-        self, repo_root: str, repo_config: dict[str, Any]
+        self, repo_root: Path, repo_config: dict[str, Any]
     ) -> Optional[tuple[Path, dict[str, Any]]]:
         # pylint: disable=import-outside-toplevel
         if not Path(repo_root).exists():
-            repo_root = repo_root.absolute()
-            print(f'"{repo_root}" does not exist, skipping')
-            return None
+            raise RuntimeError(f'"{repo_root}" does not exist')
+
+        repo_root = repo_root.absolute()
+
+        while repo_root.name == "..":
+            repo_root = Path(str(repo_root)[:-2]).parent
 
         repo_dir = find_git_repo(repo_root)
 
         if repo_dir is None:
-            print(f'could not find directory for "{repo_root}", skipping.')
-            return None
+            raise RuntimeError(f'could not find directory for "{repo_root}", skipping.')
 
-        def _get(_cmd: list[str], _prev_output: Optional[str]) -> Optional[str]:
-            if _prev_output is None:
-                return None
-
+        def _get(_cmd: list[str]) -> str:
             try:
                 return sp.check_output(_cmd, cwd=repo_dir).decode('UTF-8')
             except sp.CalledProcessError as _e:
                 _cmd_str = " ".join(_cmd)
-                print((
+                raise RuntimeError((
                     f'For repo "{repo_root}", received error "{_e}" '
                     f'command string: "{_cmd_str}"'
-                ))
-                return None
-
-        def _strip(_output: Optional[str]) -> Optional[str]:
-            return None if _output is None else _output.strip()
+                )) from _e
 
         base_commit = repo_config['base_commit']
-        diff = _get(["git", "diff"], "")
-        base = _strip(_get(['git', 'merge-base', 'HEAD', base_commit], diff))
-        patch = _get(['git', 'format-patch', '--stdout', base], base)
-        base_commit_hash = _strip(_get( ['git', 'rev-parse', '--short', base], patch))
-        commit = _strip(_get(['git', 'rev-parse', 'HEAD'], base_commit_hash))
-        short_commit = _strip(_get(['git', 'rev-parse', '--short', 'HEAD'], commit))
+        diff = _get(["git", "diff"])
+        base = _get(['git', 'merge-base', 'HEAD', base_commit]).strip()
+        patch = _get(['git', 'format-patch', '--stdout', base])
+        base_commit_hash = _get(['git', 'rev-parse', '--short', base]).strip()
+        commit = _get(['git', 'rev-parse', 'HEAD']).strip()
+        short_commit = _get(['git', 'rev-parse', '--short', 'HEAD']).strip()
 
         if not short_commit:
             return None
@@ -884,30 +879,40 @@ def add_rlgear_args(parser: argparse.ArgumentParser) \
     return parser
 
 
-class _Timer:
-    def __init__(self, elapsed_times: dict[str, list[float]], key: str):
-        # note: not thread safe
-        self.elapsed_times = elapsed_times
-        self.key = key
-        self.beg_time = None
-
-    def __enter__(self) -> None:  # pylint: disable=no-self-argument
-        self.beg_time = time.perf_counter()
-
-    def __exit__(self, *args) -> None:  # pylint: disable=no-self-argument
-        elapsed_time = time.perf_counter() - self.beg_time
-        self.elapsed_times[self.key].append(elapsed_time)
-
-
 class Profiler:
     def __init__(self) -> None:
+        self.beg_times: Dict[Any, float] = {}
         self.elapsed_times: dict[str, list[float]] = collections.defaultdict(list)
+        self.overall_beg_time = time.perf_counter()
+        self.overall_end_time: Optional[float] = None
 
-    def add(self, key: str) -> _Timer:
-        return _Timer(self.elapsed_times, key)
+    def add(self, key: Any) -> Any:  # pylint: disable=no-self-use
+        class _Timer:
+            def __enter__(self_timer) -> None:  # pylint: disable=no-self-argument
+                if key in self.beg_times:
+                    print(f'warning: key "{key}" is in the process of being timed')
 
-    def summarize(self) -> dict[str, float]:
-        return {k: np.sum(v) for k, v in self.elapsed_times.items()}
+                self.beg_times[key] = time.perf_counter()
+
+            def __exit__(self_timer, *args) -> None:  # pylint: disable=no-self-argument
+                elapsed_time = time.perf_counter() - self.beg_times[key]
+                del self.beg_times[key]
+                self.elapsed_times[key].append(elapsed_time)
+        return _Timer()
+
+    def report(self, normalize: bool) -> Dict[Any, float]:
+        if self.overall_end_time is None:
+            self.overall_end_time = time.perf_counter()
+
+        if not normalize:
+            elapsed_times = {k: np.sum(v) for k, v in self.elapsed_times.items()}
+            return elapsed_times
+        else:
+            tot_time = self.overall_end_time - self.overall_beg_time
+            nromalized_times = {
+                k: np.sum(v) / tot_time for k, v in self.elapsed_times.items()
+            }
+            return normalized_times
 
 
 def check_eq_sets(set1: Iterable[Any], set2: Iterable[Any]) -> None:

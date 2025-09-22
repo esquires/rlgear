@@ -1,7 +1,8 @@
 import pickle
 from pathlib import Path
-from typing import Any, Iterable, List, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Iterable, List, Optional, Sequence, Tuple, Type
 
+from torch import Tensor
 import torch
 from torch import nn
 

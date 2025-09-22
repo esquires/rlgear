@@ -148,3 +148,44 @@ class Saver:
             pickle_val = None
 
         return pickle_val
+
+
+def check(x: Tensor, *args: Any, lim: float = 1.0e7, **kwargs: Any) -> None:
+    """Raise :py:exc:`ValueError` if ``|x|`` has large or ``nan`` entries.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        a tensor to be checked for large or ``nan`` values
+    args : Any
+        these will be printed out in order when ``|x|`` is large or has \
+        ``nan`` values
+    lim : float, default 1.0e7
+        value that defines whether ``|x|`` is large
+    kwargs : Any
+        these will be printed out in ``|x|`` is large or has ``nan`` values
+
+    """
+
+    failed = torch.any(torch.isnan(x))
+    isinf = torch.any(torch.isinf(x))
+    if np.isinf(lim):
+        failed |= isinf
+    else:
+        failed |= isinf or torch.any(torch.abs(x.float()) >= lim)
+
+    if not failed:
+        return
+
+    msg = f"check failed with limit {lim}. x is {x}\n"
+    if args:
+        msg += "check args are\n"
+        for arg in args:
+            msg += f"{arg}\n"
+
+    if kwargs:
+        msg += "check kwargs are\n"
+        for key, val in kwargs.items():
+            msg += f"{key}: {val}\n"
+
+    raise ValueError(msg)

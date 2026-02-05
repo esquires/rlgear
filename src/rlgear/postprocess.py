@@ -49,7 +49,7 @@ class ProgressReader:
         tag: str = "episode_reward_mean",
         only_complete_data: bool = False,
         max_x: Optional[Any] = None,
-        names: Optional[Sequence[str]] = None,
+        column_cb: Optional[Callable[[int, Path], str]] = None,
         tag_cb: Optional[Callable[[Path, str, List[str]], str]] = None,
         df_cb: Optional[Callable[[Path, pd.DataFrame], pd.DataFrame]] = None,
         log_fname: str = "progress.csv",
@@ -76,12 +76,9 @@ class ProgressReader:
             limit data so that data beyond x_tag is not included. This can be
             useful when comparing two different sets of experiments where one
             lasted far longer than the other.
-        names : Optional[Sequence[str]] (default None)
-            names to be given to the columns in the dataframe. If not provided,
-            this will be the sample number of the particular experiment. For
-            example, if individual experiments are called
-            ``SAC_DM-v0_a_00000_0`` and ``SAC_DM-v0_a_00001_0`` then
-            names will by default be ``["00000", "00001"]``
+        column_cb : Optional[Callable] (default None)
+            what name to be given to each column of a dataframe. If None, the name
+            of the directory holding the progress file is used.
 
         """
 
@@ -117,6 +114,11 @@ class ProgressReader:
             for i, _df in enumerate(_dfs):
                 _dfs[i] = _df[_df.index <= _max_x]  # type: ignore
 
+        if column_cb is None:
+
+            def column_cb(_i: int, _exp: Path) -> str:
+                return _exp.name
+
         dfs = []
         filtered_names = []
         for i, exp in enumerate(experiments):
@@ -129,6 +131,7 @@ class ProgressReader:
                     df = pd.read_csv(fname, low_memory=False, sep=sep)
                 except pd.errors.EmptyDataError:
                     if exp not in self.empty_cache:
+                        import lvdb; lvdb.set_trace()  # fmt: skip
                         print(f"{exp} has empty {log_fname}, skipping")
                         self.empty_cache.add(exp)
                     continue
@@ -160,12 +163,13 @@ class ProgressReader:
                     _print_suggestions(temp_tag, avail_tags)
                 print(str(exp))
             else:
-                new_name = names[i] if names else exp.name
+                new_name = column_cb(i, exp)
                 try:
                     repeated_idx = filtered_names.index(new_name)
                 except ValueError:
                     pass
                 else:
+                    import lvdb; lvdb.set_trace()  # fmt: skip
                     msg = (
                         "Found repeated names in experiments. "
                         'Changing the "names" argument to ProgressReader.get_progress '

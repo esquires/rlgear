@@ -17,6 +17,7 @@ from typing import (
     Iterable, Dict, Optional, Any, TypedDict, TypeVar, List, Dict, Union, Tuple
 )
 import numpy as np
+import random
 
 import yaml
 
@@ -924,3 +925,36 @@ def check_eq_sets(set1: Iterable[Any], set2: Iterable[Any]) -> None:
     if set2 - set1:
         msg += f"{set2} expects keys {set2 - set1}. "
     assert set1 == set2, msg
+
+
+def get_unique_logdir(logdir: Path, digits: int) -> Path:
+    temp_logdir = logdir
+    ct = 0
+    while logdir.exists():
+        logdir = Path(str(temp_logdir.absolute()) + "-" + str(ct).zfill(digits))
+        ct += 1
+
+    return logdir
+
+
+def set_seed(seed: int) -> None:
+    # https://github.com/NM512/r2dreamer/blob/main/tools.py
+    try:
+        import torch
+    except ModuleNotFoundError:
+        pass
+    else:
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+
+    np.random.seed(seed)
+    random.seed(seed)
+
+
+def get_log_prefix(prefixes: list[str | Path]) -> Path:
+    prefix_paths = [Path(p).expanduser() for p in prefixes]
+    try:
+        return next(p for p in prefix_paths if p.is_dir())
+    except StopIteration as e:
+        raise RuntimeError(f"no log prefixes exist, options are {prefixes}") from e

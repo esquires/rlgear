@@ -1,10 +1,12 @@
+import logging
 import pickle
 from pathlib import Path
-from typing import Any, Iterable, List, Optional, Sequence, Tuple, Type
+from typing import Any, Iterable, List, Optional, Sequence, Type
 
-from torch import Tensor
 import torch
-from torch import nn
+from torch import Tensor, nn
+
+logger = logging.getLogger(__name__)
 
 
 def xavier_init(m: nn.Module) -> None:
@@ -93,9 +95,10 @@ class Saver:
         elapsed: int,
         modules: list[torch.nn.Module | torch.optim.Optimizer],
         pickle_val: Any = None,
+        force: bool = False,
     ) -> None:
 
-        if elapsed - self.last_elapsed < self.interval:
+        if not force and elapsed - self.last_elapsed < self.interval:
             return
 
         self.last_elapsed = elapsed
@@ -103,15 +106,15 @@ class Saver:
 
         while len(self.save_files) > self.max_num - 1:
             rm_file, rm_pkl_file = self.save_files.pop(0)
-            print(f"removing {rm_file}")
+            logger.debug(f"removing {rm_file}")
             rm_file.unlink(missing_ok=True)
 
             if rm_pkl_file is not None:
-                print(f"removing {rm_pkl_file}")
+                logger.debug(f"removing {rm_pkl_file}")
                 rm_pkl_file.unlink(missing_ok=True)
 
         save_file = self.log_dir / f"model_{elapsed:06d}"
-        print(f"saving to {save_file}")
+        logger.info(f"saving to {save_file}")
         torch.save(state_dicts, save_file)
 
         if pickle_val is not None:

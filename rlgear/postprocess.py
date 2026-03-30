@@ -53,6 +53,7 @@ class ProgressReader:
         tag_cb: Optional[Callable[[Path, str, List[str]], str]] = None,
         df_cb: Optional[Callable[[Path, pd.DataFrame], pd.DataFrame]] = None,
         log_fname: str = "progress.csv",
+        sep: str = ",",
     ) -> Tuple[Optional[pd.DataFrame], List[pd.DataFrame]]:
         """Convert list of directories with progress.csv into single dataframe.
 
@@ -125,7 +126,7 @@ class ProgressReader:
                 df = self.df_cache[fname]
             else:
                 try:
-                    df = pd.read_csv(fname, low_memory=False, sep="\t")
+                    df = pd.read_csv(fname, low_memory=False, sep=sep)
                 except pd.errors.EmptyDataError:
                     if exp not in self.empty_cache:
                         print(f"{exp} has empty {log_fname}, skipping")

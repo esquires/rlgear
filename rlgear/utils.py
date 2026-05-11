@@ -910,11 +910,36 @@ class Profiler:
             return elapsed_times
         else:
             tot_time = self.overall_end_time - self.overall_beg_time
-            nromalized_times = {
+            normalized_times = {
                 k: np.sum(v) / tot_time for k, v in self.elapsed_times.items()
             }
             return normalized_times
 
+    def profile(self, key: Optional[str] = None) -> Any:
+
+        def _profile_decorator_with_key(func: Any) -> Any:
+
+            def _profile(*args, **kwargs) -> Any:  # type: ignore
+                _key = func.__name__ if key is None else key
+                with self.add(_key):
+                    return func(*args, **kwargs)
+
+            return _profile
+
+        return _profile_decorator_with_key
+
+    def decorate_class(self, obj: Any, prefix: Optional[str] = None) -> Any:
+
+        if prefix is None:
+            prefix = type(obj).__name__ + ":"
+
+        for attr in dir(obj):
+            val = getattr(obj, attr)
+            if not attr.startswith("__") and callable(val):
+                key = f"{prefix}{val.__name__}"
+                val_with_decorator = self.profile(key)(val)
+                print("decorating " + attr)
+                setattr(obj, attr, val_with_decorator)
 
 def check_eq_sets(set1: Iterable[Any], set2: Iterable[Any]) -> None:
     set1 = set(set1)

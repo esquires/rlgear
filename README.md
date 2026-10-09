@@ -3,13 +3,15 @@
 This project makes setting up new research projects with
 [ray](https://docs.ray.io/en/latest/index.html) a bit more turn-key.
 
-## Installation
-
-`rlgear` is designed to work with ray version 2.54 or later
-and has been tested with python 3.14.
+To install the `uv` python package manager on your system,
+see [here](https://docs.astral.sh/uv/getting-started/installation/)
+or run `curl -LsSf https://astral.sh/uv/install.sh | sh`.
+Once `uv` is installed run
 
 ```bash
-# install torch: https://pytorch.org/get-started/locally/
-# install ray: pip install "ray[rllib]"
-pip install .
+uv sync
+source .venv/bin/activate
 ```
+
+Note that this repo does not specify a pytorch installation
+so you will need to install that separately for all features.

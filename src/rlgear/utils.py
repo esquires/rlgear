@@ -117,7 +117,6 @@ class MetaWriter():
       (i.e., with ``writer = rlgear.utils.MetaWriter()`` below)
         - ``args.txt``: contains command line argument \
           (in this case ``python foo.py``)
-        - ``requirements.txt``: output of ``pip freeze``
     - ``repo_root``
         - ``README.md``: a description of how to recreate the repo with saved \
             patches, git diff, and commit information
@@ -176,9 +175,6 @@ class MetaWriter():
     def configure(self) -> None:
 
         # https://stackoverflow.com/a/58013217
-        self.requirements = sp.check_output(
-            [sys.executable, '-m', 'pip', 'freeze']).decode('UTF-8')
-
         self.orig_dir = Path(os.getcwd())
 
         self.cmd = self._rel_path(Path(sys.executable)) + " " + " ".join(sys.argv)
@@ -332,9 +328,6 @@ class MetaWriter():
         with open(meta_dir / 'args.txt', 'w', encoding='UTF-8') as f:
             f.write(self.cmd)
 
-        with open(meta_dir / 'requirements.txt', 'w', encoding='UTF-8') as f:
-            f.write(self.requirements)
-
         for repo_name, repo_data in self.git_info.items():
             meta_repo_dir = meta_dir / repo_name
             meta_repo_dir.mkdir(exist_ok=True, parents=True)
@@ -454,7 +447,7 @@ class MetaWriter():
                 msg += '\n'
 
         msg += (
-            '# run experiment (see also requirements.txt for dependencies)\n'
+            '# run experiment\n'
             f'cd {MetaWriter._rel_path(orig_dir)}\n'
             f'{cmd}\n')
         msg += '```'

@@ -945,14 +945,27 @@ def check_eq_sets(set1: Iterable[Any], set2: Iterable[Any]) -> None:
     assert set1 == set2, msg
 
 
-def get_unique_logdir(logdir: Path, digits: int) -> Path:
-    temp_logdir = logdir
+def create_unique_dir(base_dir: Path, zero_fill: int, use_subdirectory: bool) -> Path:
     ct = 0
-    while logdir.exists():
-        logdir = Path(str(temp_logdir.absolute()) + "-" + str(ct).zfill(digits))
-        ct += 1
 
-    return logdir
+    def _add_suffix(_ct: int) -> Path:
+        _suffix = f"{_ct:0{zero_fill}d}"
+        if use_subdirectory:
+            return base_dir / _suffix
+        else:
+            return base_dir.parent / f"{base_dir.name}-{_suffix}"
+
+    path = _add_suffix(ct) if use_subdirectory else base_dir
+
+    while True:
+        try:
+            path.mkdir(parents=True)
+            break
+        except FileExistsError:
+            ct += 1
+            path = _add_suffix(ct)
+
+    return path
 
 
 def set_seed(seed: int) -> None:
